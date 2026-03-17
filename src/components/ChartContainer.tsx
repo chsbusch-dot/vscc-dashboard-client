@@ -18,7 +18,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     physioIds,
     verticalGroup
 }) => {
-    const { state, actions, subscribeToData } = useDashboard();
+    const { state, actions, subscribeToData, dataRef } = useDashboard();
     const sciChartSurfaceRef = useRef<SciChart.SciChartSurface | null>(null);
     const dataSeriesRefs = useRef<Record<PhysioId, SciChart.XyDataSeries>>({} as Record<PhysioId, SciChart.XyDataSeries>);
     const divElementId = `scichart-root-${groupName.replace(/\s/g, '')}`;
@@ -36,6 +36,12 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     const [displayStats, setDisplayStats] = useState<Record<string, { current: string; min: string; max: string; avg: string; }>>({});
     const latestStatsRef = useRef<Record<string, { current: string; min: string; max: string; avg: string; }>>({});
     const runningStatsRef = useRef<Record<string, { min: number; max: number; sum: number; count: number }>>({});
+    
+    const lastDataRef = useRef<{ timestamp: number; receivedAt: number } | null>(null);
+    
+    const [isSignalLost, setIsSignalLost] = useState(false);
+    const isSignalLostRef = useRef(false);
+    const lastChartDataReceivedAtRef = useRef<number>(Date.now());
 
     // Update the visible stats on a throttled interval to reduce UI flicker and render cost.
     useEffect(() => {
@@ -58,6 +64,8 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         };
     }, [surface, verticalGroup]);
 
+    const physioIdsStr = physioIds.join(',');
+
     // Effect to configure axes and series when physioIds change
     useEffect(() => {
         if (!surface || !wasmContext) return;
@@ -68,6 +76,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         surface.yAxes.clear();
         surface.renderableSeries.clear();
         surface.chartModifiers.clear();
+        surface.annotations.clear();
         dataSeriesRefs.current = {} as Record<PhysioId, SciChart.XyDataSeries>;
 
         // Configure X-Axis
@@ -105,10 +114,17 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
             const dataSeries = new SciChart.XyDataSeries(wasmContext, {
                 fifoCapacity: 500000, // Rule 6: Memory Safety
-                containsNaN: false,
+                containsNaN: true, // Enable NaN support for visual gaps (Lead Off)
                 dataSeriesName: id // Set the series name to the PhysioID for lookup in tooltip
             });
             dataSeriesRefs.current[id] = dataSeries;
+
+            // Pre-fill with historical data so charts don't blank out on layout updates
+            const existing = dataRef.current[id];
+            if (existing && existing.x.length > 0) {
+                const safeY = existing.y.map(val => val === null ? Number.NaN : val);
+                dataSeries.appendRange(existing.x, safeY);
+            }
 
             const lineSeries = new SciChart.FastLineRenderableSeries(wasmContext, {
                 dataSeries,
@@ -117,6 +133,21 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             });
             surface.renderableSeries.add(lineSeries);
         });
+
+        // Add SpO2 Warning Threshold Band (< 90%)
+        if (physioIds.includes('NOM_PULS_OXIM_SAT_O2')) {
+            surface.annotations.add(new SciChart.BoxAnnotation({
+                y1: 0,
+                y2: 90,
+                xCoordinateMode: SciChart.ECoordinateMode.Relative,
+                x1: 0,
+                x2: 1,
+                fill: "rgba(220, 20, 60, 0.1)", // Light transparent red
+                stroke: "rgba(220, 20, 60, 0.8)", // Solid red border at 90%
+                strokeThickness: 1.5,
+                annotationLayer: SciChart.EAnnotationLayer.Background
+            }));
+        }
 
         const onUserZoom = () => {
             if (autoScrollRef.current) {
@@ -149,11 +180,16 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 showRolloverLine: true,
                 tooltipDataTemplate: (seriesInfo: SciChart.SeriesInfo) => {
                     const date = new Date(seriesInfo.xValue * 1000);
-                    // FIX: Display Local Time in tooltip to match the Axis labels
-                    const timeStr = date.toLocaleTimeString('en-GB', { hour12: false }) +
-                                  `.${date.getMilliseconds().toString().padStart(3, '0')}`;
+                    
+                    // FIX: Use UTC methods to align exactly with SciChart's native SmartDateLabelProvider
+                    const h = date.getUTCHours().toString().padStart(2, '0');
+                    const m = date.getUTCMinutes().toString().padStart(2, '0');
+                    const s = date.getUTCSeconds().toString().padStart(2, '0');
+                    const ms = date.getUTCMilliseconds().toString().padStart(3, '0');
+                    const timeStr = `${h}:${m}:${s}.${ms}`;
+                    
                     const unit = PHYSIO_META[seriesInfo.seriesName as PhysioId]?.unit || '';
-                    const value = seriesInfo.yValue?.toFixed(2) ?? 'N/A';
+                    const value = (seriesInfo.yValue === undefined || Number.isNaN(seriesInfo.yValue)) ? '---' : seriesInfo.yValue.toFixed(2);
                     return [`Time: ${timeStr}`, 
                     `${PHYSIO_META[seriesInfo.seriesName as PhysioId].name}: ${value} ${unit}`];
                 }
@@ -162,7 +198,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
         surface.resumeUpdates(); // Rule 3
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [surface, wasmContext, physioIds]);
+    }, [surface, wasmContext, physioIdsStr]);
     // Keep Zoom Add this to ChartContainer.tsx
     useEffect(() => {
         const container = document.getElementById(divElementId);
@@ -198,6 +234,11 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 latestStatsRef.current = {};
                 setDisplayStats({});
                 surface.resumeUpdates();
+                
+                // Reset signal tracking state
+                isSignalLostRef.current = false;
+                setIsSignalLost(false);
+                lastChartDataReceivedAtRef.current = Date.now();
                 return;
             }
 
@@ -210,15 +251,29 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             // We group updates by series to call appendRange once per series
             const updates = {} as Record<PhysioId, { x: number[], y: number[] }>;
             let maxTimestamp = 0;
+            let chartReceivedData = false;
 
             records.forEach(rec => {
                 if (physioIdsRef.current.includes(rec.physio_id)) {
+                    chartReceivedData = true;
                     if (!updates[rec.physio_id]) updates[rec.physio_id] = { x: [], y: [] };
                     updates[rec.physio_id].x.push(rec.time);
-                    updates[rec.physio_id].y.push(rec.value);
+                    
+                    // The Gap Rule: Convert missing, null, undefined, or empty string to NaN
+                    const val = rec.value;
+                    const isInvalid = val === null || val === undefined || (typeof val === 'string' && val === '') || Number.isNaN(Number(val));
+                    updates[rec.physio_id].y.push(isInvalid ? Number.NaN : Number(val));
                 }
                 if (rec.time > maxTimestamp) maxTimestamp = rec.time;
             });
+            
+            if (chartReceivedData) {
+                lastChartDataReceivedAtRef.current = Date.now();
+                if (isSignalLostRef.current) {
+                    isSignalLostRef.current = false;
+                    setIsSignalLost(false);
+                }
+            }
 
             // Apply updates to SciChart
             Object.entries(updates).forEach(([id, data]) => {
@@ -226,34 +281,58 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 if (series) {
                     // 1. Get the very last timestamp currently on the chart
                     const count = series.count();
-                    const lastX = count > 0 ? series.getNativeXValues().get(count - 1) : -Infinity;
+                    let lastX = count > 0 ? series.getNativeXValues().get(count - 1) : -Infinity;
                     
                     // 2. Only push points that are NEWER than the last timestamp
                     const newX: number[] = [];
                     const newY: number[] = [];
                     for (let i = 0; i < data.x.length; i++) {
-                        if (data.x[i] > lastX) {
-                            newX.push(data.x[i]);
-                            newY.push(data.y[i]);
+                        let currentX = data.x[i];
+                        
+                        if (currentX <= lastX) {
+                            if (lastX - currentX < 1.0) {
+                                currentX = lastX + 0.010; // Un-bunch VSCapture duplicate packet timestamps
+                            } else {
+                                continue; // Drop old out-of-order data
+                            }
                         }
+
+                        // Detect temporal gaps (e.g., monitor disconnected, MQTT paused)
+                        if (lastX !== -Infinity && (currentX - lastX) > 2.0) {
+                            newX.push(currentX - 0.001); // Append NaN just before new point
+                            newY.push(Number.NaN);
+                        }
+                        
+                        newX.push(currentX);
+                        newY.push(data.y[i]);
+                        lastX = currentX;
                     }
 
                     // 3. Append the clean, filtered array
                     if (newX.length > 0) {
                         series.appendRange(newX, newY);
                     }
-                    // 4. Update Stats (Incremental)
+                    // 4. Update Stats (Incremental, ignoring NaNs)
                     const stats = runningStatsRef.current[id] || { min: Infinity, max: -Infinity, sum: 0, count: 0 };
                     for (const val of data.y) {
-                        if (val < stats.min) stats.min = val;
-                        if (val > stats.max) stats.max = val;
-                        stats.sum += val;
-                        stats.count++;
+                        if (!Number.isNaN(val)) {
+                            if (val < stats.min) stats.min = val;
+                            if (val > stats.max) stats.max = val;
+                            stats.sum += val;
+                            stats.count++;
+                        }
                     }
                     runningStatsRef.current[id] = stats;
 
                     // Update Latest Stats Ref for UI
-                    const lastValue = data.y.length > 0 ? data.y[data.y.length - 1] : NaN;
+                    let lastValue = Number.NaN;
+                    for (let i = data.y.length - 1; i >= 0; i--) {
+                        if (!Number.isNaN(data.y[i])) {
+                            lastValue = data.y[i];
+                            break;
+                        }
+                    }
+                    
                     const avg = stats.count > 0 ? stats.sum / stats.count : NaN;
 
                     latestStatsRef.current[id] = {
@@ -266,14 +345,17 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             });
 
             // Rule 4: Global Auto-Scroll
-            // In a real scenario, maxTimestamp should be global. 
-            // Since we receive the global stream here, maxTimestamp is from the packet.
-            if (state.autoScroll && maxTimestamp > 0) {
-                 const xAxis = surface.xAxes.get(0);
-                 if (xAxis) {
-                     const window = state.timeWindow * 60;
-                     xAxis.visibleRange = new SciChart.NumberRange(maxTimestamp - window, maxTimestamp);
-                 }
+            if (maxTimestamp > 0) {
+                lastDataRef.current = { timestamp: maxTimestamp, receivedAt: Date.now() };
+                
+                // Legacy data-driven scroll for non-live sources (File Replay, URL)
+                if (state.autoScroll && state.dataSource !== 'mqtt' && state.dataSource !== 'websocket') {
+                    const xAxis = surface.xAxes.get(0);
+                    if (xAxis) {
+                        const window = state.timeWindow * 60;
+                        xAxis.visibleRange = new SciChart.NumberRange(maxTimestamp - window, maxTimestamp);
+                    }
+                }
             }
 
             surface.resumeUpdates();
@@ -284,6 +366,39 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         };
      
     }, [surface, state.status, state.autoScroll, state.timeWindow, subscribeToData]);
+
+    // Effect for continuous smooth scrolling in live modes (MQTT/WS)
+    // Keeps the X-axis moving forward even if the signal is lost.
+    useEffect(() => {
+        if (!surface || !state.autoScroll || state.status !== 'Streaming') return;
+        if (state.dataSource !== 'mqtt' && state.dataSource !== 'websocket') return;
+
+        // Reset signal timeout tracker when stream starts
+        lastChartDataReceivedAtRef.current = Date.now();
+
+        const xAxis = surface.xAxes.get(0);
+        if (!xAxis) return;
+
+        const intervalId = setInterval(() => {
+            const now = Date.now();
+            if (lastDataRef.current) {
+                const elapsedSeconds = (now - lastDataRef.current.receivedAt) / 1000;
+                const virtualMax = lastDataRef.current.timestamp + elapsedSeconds;
+                const timeWindowSeconds = state.timeWindow * 60;
+                
+                xAxis.visibleRange = new SciChart.NumberRange(virtualMax - timeWindowSeconds, virtualMax);
+            }
+            
+            // Signal Loss Detection (2 seconds threshold)
+            const chartElapsedSeconds = (now - lastChartDataReceivedAtRef.current) / 1000;
+            if (chartElapsedSeconds > 2.0 && !isSignalLostRef.current) {
+                isSignalLostRef.current = true;
+                setIsSignalLost(true);
+            }
+        }, 50); // 20Hz continuous tracking
+
+        return () => clearInterval(intervalId);
+    }, [surface, state.autoScroll, state.status, state.dataSource, state.timeWindow]);
 
     // Effect for handling all zoom and pan behavior
     useEffect(() => {
@@ -351,8 +466,37 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                     <Button variant="outlined" size="small" onClick={handleSnapshot} sx={{ mt: 1 }}>Snapshot</Button>
                 </Box>
                 {/* Chart Box (Right) */}
-                <Box sx={{ flexGrow: 1, minWidth: 0, height: chartHeight }}>
+                <Box sx={{ flexGrow: 1, minWidth: 0, height: chartHeight, position: 'relative' }}>
                     <div id={divElementId} style={{ width: "100%", height: "100%", position: 'relative' }}></div>
+                    {isSignalLost && (
+                        <Box
+                            sx={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                pointerEvents: 'none', // Allows interaction with the chart behind it
+                                zIndex: 10,
+                                backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                            }}
+                        >
+                            <Typography
+                                variant="h3"
+                                sx={{
+                                    color: 'error.main',
+                                    fontWeight: 'bold',
+                                    textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                                    letterSpacing: 2
+                                }}
+                            >
+                                NO SIGNAL
+                            </Typography>
+                        </Box>
+                    )}
                 </Box>
             </Box>
         </Paper>

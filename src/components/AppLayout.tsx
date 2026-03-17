@@ -7,6 +7,7 @@ import {
     Drawer,
     CircularProgress,
     LinearProgress,
+    Chip,
 } from '@mui/material';
 import { SciChartVerticalGroup } from 'scichart';
 import Sidebar from './Sidebar';
@@ -17,9 +18,7 @@ import AdvancedCharts from './AdvancedCharts';
 
 const drawerWidth = 300;
 
-// Create a single vertical group to sync all charts
 const verticalGroup = new SciChartVerticalGroup();
-
 
 const AppLayout = () => {
     const { state } = useDashboard();
@@ -45,7 +44,16 @@ const AppLayout = () => {
         return Object.entries(groups);
     }, [state.selectedPhysioIds]);
     
-    // Note: state.recordCount updates are now throttled in DashboardContext to prevent header flickering
+    const getStatusText = () => {
+        if (state.dataSource === 'upload' && state.recordCount > 0 && state.status !== 'Streaming' && state.status !== 'Paused') {
+            return `${state.recordCount} records loaded`;
+        }
+        if (state.status === 'Streaming') {
+            return state.dataSource === 'url' ? `Polling (${state.recordCount})` : 'Live Streaming';
+        }
+        return state.status;
+    };
+
 
     return (
         <Box sx={{ display: 'flex' }}>
@@ -54,18 +62,20 @@ const AppLayout = () => {
                 sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}
             >
                 <Toolbar>
-                    <Typography variant="h6" noWrap component="div" sx={{ flex: 1 }}>
+                    <Typography variant="h6" noWrap component="div">
                         VSCapture Visualizer
                     </Typography>
-                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
-                        <Typography variant="h6" component="div">
-                            Philips MP50 Data Stream
-                        </Typography>
+                    <Chip 
+                        label={state.dataSource || 'None'} 
+                        size="small" 
+                        color="secondary"
+                        sx={{ ml: 2, textTransform: 'uppercase' }} 
+                    />
+                    <Box sx={{ flex: 1 }} />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         {state.status === 'Loading' && <CircularProgress size={24} color="inherit" />}
                         <Typography variant="body1" sx={{ textTransform: 'uppercase' }}>
-                            ({state.dataSource === 'url' && state.recordCount > 0
-                                ? `Now streaming ${state.recordCount} records`
-                                : state.status})
+                            ({getStatusText()})
                         </Typography>
                         {state.replayProgress > 0 && (
                             <LinearProgress variant="determinate" value={state.replayProgress} color="secondary" sx={{ width: '100px', ml: 2, height: 8 }} />
@@ -78,12 +88,7 @@ const AppLayout = () => {
                 sx={{
                     width: drawerWidth,
                     flexShrink: 0,
-                    [`& .MuiDrawer-paper`]: {
-                        width: drawerWidth,
-                        boxSizing: 'border-box',
-                        display: 'flex',
-                        flexDirection: 'column'
-                    },
+                    [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box', display: 'flex', flexDirection: 'column' },
                 }}
             >
                 <Toolbar />
@@ -91,14 +96,7 @@ const AppLayout = () => {
             </Drawer>
             <Box
                 component="main"
-                sx={{
-                    flexGrow: 1,
-                    bgcolor: 'background.default',
-                    p: '20px',
-                    height: '100vh',
-                    overflow: 'auto',
-                    boxSizing: 'border-box'
-                }}
+                sx={{ flexGrow: 1, bgcolor: 'background.default', p: '20px', height: '100vh', overflow: 'auto' }}
             >
                 <Toolbar />
 
@@ -113,10 +111,11 @@ const AppLayout = () => {
                     </Box>
                 )}
 
-                {(state.advancedCharts.rawPleth || state.advancedCharts.ppi || state.advancedCharts.overlay || state.advancedCharts.spectrogram) && (
+                {(state.advancedCharts.rawPleth || state.advancedCharts.resp || state.advancedCharts.ppi || state.advancedCharts.overlay || state.advancedCharts.spectrogram) && (
                     <AdvancedCharts
                         verticalGroup={verticalGroup}
                         showRawPleth={state.advancedCharts.rawPleth}
+                        showResp={state.advancedCharts.resp}
                         showPpi={state.advancedCharts.ppi}
                         showOverlay={state.advancedCharts.overlay}
                         showSpectrogram={state.advancedCharts.spectrogram}

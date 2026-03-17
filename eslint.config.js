@@ -1,10 +1,10 @@
-import js from '@eslint/js'
-import globals from 'globals'
-import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
-import jsxA11y from 'eslint-plugin-jsx-a11y' // <-- 1. Imported here
-import tseslint from 'typescript-eslint'
-import { defineConfig, globalIgnores } from 'eslint/config'
+import js from '@eslint/js';
+import globals from 'globals';
+import reactHooks from 'eslint-plugin-react-hooks';
+import reactRefresh from 'eslint-plugin-react-refresh';
+import jsxA11y from 'eslint-plugin-jsx-a11y';
+import tseslint from 'typescript-eslint';
+import { defineConfig, globalIgnores } from 'eslint/config';
 
 export default defineConfig([
   globalIgnores(['dist']),
@@ -12,22 +12,34 @@ export default defineConfig([
     files: ['**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
-      tseslint.configs.recommended,
+      // Switch to type-aware linting
+      ...tseslint.configs.recommendedTypeChecked,
+      // Accessibility rules
+      jsxA11y.flatConfigs.recommended,
+      // Rules of Hooks
       reactHooks.configs.flat.recommended,
-      reactRefresh.configs.vite,
     ],
-    // 2. Register the plugin
     plugins: {
-      'jsx-a11y': jsxA11y,
-    },
-    // 3. Apply the recommended rules
-    rules: {
-      ...jsxA11y.configs.recommended.rules,
+      'react-refresh': reactRefresh,
     },
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+      // Add parser options for type-aware linting
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    // You can add custom rule overrides here if needed
+    rules: {
+      // Example: relax a rule if it's too noisy
+      // "@typescript-eslint/no-explicit-any": "off",
+      // Vite-specific refresh rules
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
     },
   },
-])
-
+]);

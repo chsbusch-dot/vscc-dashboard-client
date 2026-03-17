@@ -1,30 +1,96 @@
 import React, { useEffect, useRef } from 'react';
 import { Box, Paper, Typography } from '@mui/material';
 import * as SciChart from 'scichart';
-import { useDashboard } from '../data/DashboardContext';
+import { useDashboard, type WaveformId } from '../data/DashboardContext';
 import { getClinicalColor } from '../utils/colors';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
     showRawPleth: boolean;
+    showResp: boolean; // Add RESP prop
     showPpi: boolean;
     showOverlay: boolean;
     showSpectrogram: boolean;
 }
 
-const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawPleth, showPpi, showOverlay, showSpectrogram }) => {
-    const { state, subscribeToData } = useDashboard();
+// Utility to safely append only newer, strictly increasing points to avoid SciChart sorting exceptions
+const appendSafe = (series: SciChart.XyDataSeries | undefined, xArr: number[], yArr: (number | null)[]) => {
+    if (!series) return;
+    const count = series.count();
+    let lastX = count > 0 ? series.getNativeXValues().get(count - 1) : -Infinity;
+    const newX: number[] = [];
+    const newY: number[] = [];
+    
+    for (let i = 0; i < xArr.length; i++) {
+        let x = xArr[i];
+        
+        if (x <= lastX) {
+            if (lastX - x < 1.0) {
+                // VSCapture outputs multiple points per packet with the identical timestamp.
+                // We space them out by ~10ms (assuming ~100Hz standard waveform rate) 
+                // to reconstruct the continuous signal and satisfy SciChart's strict ascending rule.
+                x = lastX + 0.010; 
+            } else {
+                continue; // Old out-of-order data, drop it
+            }
+        }
+        
+        // Gap Rule: Break the line visually if signal was lost for > 2 seconds
+        if (lastX !== -Infinity && (x - lastX) > 2.0) {
+            newX.push(x - 0.001);
+            newY.push(Number.NaN);
+        }
+        newX.push(x);
+        const yVal = yArr[i];
+        newY.push(yVal === null || yVal === undefined ? Number.NaN : yVal);
+        lastX = x;
+    }
+    if (newX.length > 0) {
+        series.appendRange(newX, newY);
+    }
+};
+
+const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawPleth, showResp, showPpi, showOverlay, showSpectrogram }) => {
+    const { state, actions, subscribeToData, dataRef } = useDashboard();
     const chart1Div = useRef<HTMLDivElement>(null);
+    const chartRespDiv = useRef<HTMLDivElement>(null); // Ref for RESP chart
     const chart2Div = useRef<HTMLDivElement>(null);
     const chart3Div = useRef<HTMLDivElement>(null);
     const chart4Div = useRef<HTMLDivElement>(null);
 
-    // FIX 1: Use 'any' here to bypass the missing ISciChartDataSeries export. 
-    // We cast to specific series types (XyDataSeries, etc) below anyway.
-    const dataSeriesRefs = useRef<Record<string, any>>({});
+    const dataSeriesRefs = useRef<Record<string, SciChart.XyDataSeries>>(Object.create(null));
     const surfacesRef = useRef<SciChart.SciChartSurface[]>([]);
     const observersRef = useRef<ResizeObserver[]>([]);
     const ppiLastPeakRef = useRef<{time: number, val: number}>({time: -1, val: 0}); 
+    const lastDataRef = useRef<{ timestamp: number; receivedAt: number } | null>(null);
+
+    // Keep a stable ref for event listeners to check autoScroll status without triggering re-renders
+    const autoScrollRef = useRef(state.autoScroll);
+    useEffect(() => {
+        autoScrollRef.current = state.autoScroll;
+    }, [state.autoScroll]);
+
+    // 1. DOM Listeners: Disable auto-scroll when user clicks, touches, or uses the mouse wheel on any chart
+    useEffect(() => {
+        const disableAutoScroll = () => {
+            if (autoScrollRef.current) actions.setAutoScroll(false);
+        };
+
+        const divs = [chart1Div.current, chartRespDiv.current, chart2Div.current, chart3Div.current, chart4Div.current];
+        divs.forEach(container => {
+            container?.addEventListener('mousedown', disableAutoScroll);
+            container?.addEventListener('wheel', disableAutoScroll);
+            container?.addEventListener('touchstart', disableAutoScroll);
+        });
+
+        return () => {
+            divs.forEach(container => {
+                container?.removeEventListener('mousedown', disableAutoScroll);
+                container?.removeEventListener('wheel', disableAutoScroll);
+                container?.removeEventListener('touchstart', disableAutoScroll);
+            });
+        };
+    }, [actions, showRawPleth, showResp, showPpi, showOverlay, showSpectrogram]);
 
     useEffect(() => {
         return () => {
@@ -37,176 +103,166 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
     useEffect(() => {
         let isMounted = true;
+        const localSurfaces: SciChart.SciChartSurface[] = [];
+        const localObservers: ResizeObserver[] = [];
 
         const initCharts = async () => {
-            surfacesRef.current.forEach(s => s.delete());
-            surfacesRef.current = [];
-            observersRef.current.forEach(o => o.disconnect());
-            observersRef.current = [];
-            dataSeriesRefs.current = {};
-
             if (!isMounted) return;
 
             SciChart.SciChartSurface.UseCommunityLicense();
             SciChart.SciChartDefaults.performanceWarnings = false;
             SciChart.SciChartSurface.configure({ wasmUrl: "/scichart2d.wasm" });
 
+            const now = Date.now() / 1000;
+
+            // 2. SciChart Listeners: Helper to build modifiers that disable auto-scroll on active interaction
+            const getModifiers = () => {
+                const onUserZoom = () => {
+                    if (autoScrollRef.current) actions.setAutoScroll(false);
+                };
+
+                const subscribeIfAvailable = (eventSource: unknown, handler: () => void) => {
+                    const candidate = eventSource as { subscribe?: (cb: () => void) => void } | undefined;
+                    if (candidate && typeof candidate.subscribe === "function") {
+                        candidate.subscribe(handler);
+                    }
+                };
+
+                const mouseWheelZoomModifier = new SciChart.MouseWheelZoomModifier({ modifierGroup: "GlobalSyncGroup" });
+                subscribeIfAvailable((mouseWheelZoomModifier as unknown as { zoomed?: unknown }).zoomed, onUserZoom);
+
+                const zoomPanModifier = new SciChart.ZoomPanModifier({ modifierGroup: "GlobalSyncGroup" });
+                subscribeIfAvailable((zoomPanModifier as unknown as { panned?: unknown }).panned, onUserZoom);
+
+                return [
+                    new SciChart.ZoomExtentsModifier({ modifierGroup: "GlobalSyncGroup" }),
+                    mouseWheelZoomModifier,
+                    zoomPanModifier
+                ];
+            };
+
             // --- Chart 1: Time-Domain Waveform Plot (Raw PLETH Signal) ---
             if (chart1Div.current && showRawPleth) {
-                const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chart1Div.current);
+                const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chart1Div.current, {
+                    theme: new SciChart.SciChartJSLightTheme()
+                });
+                if (!isMounted) {
+                    sciChartSurface.delete();
+                    return;
+                }
+                localSurfaces.push(sciChartSurface);
                 surfacesRef.current.push(sciChartSurface);
                 sciChartSurface.suspendUpdates();
                 
-                const xAxis = new SciChart.NumericAxis(wasmContext, { axisTitle: "Time", labelProvider: new SciChart.SmartDateLabelProvider() });
-                const yAxis = new SciChart.NumericAxis(wasmContext, { axisTitle: "Amplitude (A-D Units)" });
+                const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, { 
+                    axisTitle: "Time", 
+                    visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
+                    labelProvider: new SciChart.SmartDateLabelProvider({ labelFormat: SciChart.ENumericFormat.Date_HHMMSS }) 
+                });
+                const yAxis = new SciChart.NumericAxis(wasmContext, { 
+                    axisTitle: "Amplitude (A-D Units)",
+                    autoRange: SciChart.EAutoRange.Always,
+                    growBy: new SciChart.NumberRange(0.1, 0.1)
+                });
                 sciChartSurface.xAxes.add(xAxis);
                 sciChartSurface.yAxes.add(yAxis);
 
-                const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000 });
+                const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000, containsNaN: true });
                 dataSeriesRefs.current.rawPleth = dataSeries;
+                
+                const existingPleth = dataRef.current['NOM_PLETH'];
+                if (existingPleth && existingPleth.x.length > 0) {
+                    appendSafe(dataSeries, existingPleth.x, existingPleth.y);
+                }
+
                 sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
-                    dataSeries, stroke: getClinicalColor('NOM_PULS_OXIM_SAT_O2'), strokeThickness: 2
+                    dataSeries, stroke: getClinicalColor('NOM_PLETH'), strokeThickness: 2
                 }));
 
-                // FIX 2: Assign vertical group directly to the surface property
-                // @ts-expect-error - Runtime API assignment
-                sciChartSurface.verticalGroup = verticalGroup;
-                sciChartSurface.chartModifiers.add(
-                    new SciChart.ZoomExtentsModifier({ modifierGroup: "GlobalSyncGroup" }),
-                    new SciChart.MouseWheelZoomModifier({ modifierGroup: "GlobalSyncGroup" }),
-                    new SciChart.ZoomPanModifier({ modifierGroup: "GlobalSyncGroup" })
-                );
+                sciChartSurface.chartModifiers.add(...getModifiers());
 
                 const observer = new ResizeObserver(() => sciChartSurface?.invalidateElement());
                 observer.observe(chart1Div.current);
+                localObservers.push(observer);
                 observersRef.current.push(observer);
                 sciChartSurface.resumeUpdates();
             }
 
-            // --- Chart 2: Pulse Rate vs. Time (Tachogram/PPI Plot) ---
-            if (chart2Div.current && showPpi) {
-                const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chart2Div.current);
-                surfacesRef.current.push(sciChartSurface);
-                sciChartSurface.suspendUpdates();
-
-                sciChartSurface.xAxes.add(new SciChart.NumericAxis(wasmContext, { axisTitle: "Time", labelProvider: new SciChart.SmartDateLabelProvider() }));
-                sciChartSurface.yAxes.add(new SciChart.NumericAxis(wasmContext, { axisTitle: "Pulse-to-Pulse Interval (ms)" }));
-
-                const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 50000 });
-                dataSeriesRefs.current.ppi = dataSeries;
-                sciChartSurface.renderableSeries.add(new SciChart.XyScatterRenderableSeries(wasmContext, {
-                    dataSeries,
-                    pointMarker: new SciChart.EllipsePointMarker(wasmContext, {
-                        width: 7, height: 7, fill: getClinicalColor('NOM_PULS_INTERVAL'), stroke: "#FFFFFF", strokeThickness: 1
-                    })
-                }));
-
-                // FIX 2
-                // @ts-expect-error - Runtime API assignment
-                sciChartSurface.verticalGroup = verticalGroup;
-                sciChartSurface.chartModifiers.add(
-                    new SciChart.ZoomExtentsModifier({ modifierGroup: "GlobalSyncGroup" }),
-                    new SciChart.MouseWheelZoomModifier({ modifierGroup: "GlobalSyncGroup" }),
-                    new SciChart.ZoomPanModifier({ modifierGroup: "GlobalSyncGroup" })
-                );
-
-                const observer = new ResizeObserver(() => sciChartSurface?.invalidateElement());
-                observer.observe(chart2Div.current);
-                observersRef.current.push(observer);
-                sciChartSurface.resumeUpdates();
-            }
-
-            // --- Chart 3: Overlayed Derived Physiological Parameters ---
-            if (chart3Div.current && showOverlay) {
-                const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chart3Div.current);
-                surfacesRef.current.push(sciChartSurface);
-                sciChartSurface.suspendUpdates();
-
-                sciChartSurface.xAxes.add(new SciChart.NumericAxis(wasmContext, { labelProvider: new SciChart.SmartDateLabelProvider() }));
-                sciChartSurface.yAxes.add(new SciChart.NumericAxis(wasmContext, { id: "LeftAxis", axisTitle: "Raw Amplitude", axisAlignment: SciChart.EAxisAlignment.Left }));
-                sciChartSurface.yAxes.add(new SciChart.NumericAxis(wasmContext, { id: "RightAxis", axisTitle: "Derived Parameters", axisAlignment: SciChart.EAxisAlignment.Right }));
-
-                const dsRaw = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000 });
-                dataSeriesRefs.current.overlayPleth = dsRaw;
-                sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
-                    dataSeries: dsRaw, yAxisId: "LeftAxis", stroke: getClinicalColor('NOM_PULS_OXIM_SAT_O2'), strokeThickness: 1
-                }));
-
-                const dsPR = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 50000 });
-                dataSeriesRefs.current.overlayPR = dsPR;
-                sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
-                    dataSeries: dsPR, yAxisId: "RightAxis", stroke: getClinicalColor('NOM_PLETH_PULS_RATE'), strokeThickness: 2
-                }));
-
-                const dsSpo2 = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 50000 });
-                dataSeriesRefs.current.overlaySpo2 = dsSpo2;
-                sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
-                    dataSeries: dsSpo2, yAxisId: "RightAxis", stroke: getClinicalColor('NOM_PULS_OXIM_SAT_O2'), strokeThickness: 2
-                }));
-
-                // FIX 2
-                // @ts-expect-error - Runtime API assignment
-                sciChartSurface.verticalGroup = verticalGroup;
-                sciChartSurface.chartModifiers.add(
-                    new SciChart.ZoomExtentsModifier({ modifierGroup: "GlobalSyncGroup" }),
-                    new SciChart.MouseWheelZoomModifier({ modifierGroup: "GlobalSyncGroup" }),
-                    new SciChart.ZoomPanModifier({ modifierGroup: "GlobalSyncGroup" })
-                );
-
-                const observer = new ResizeObserver(() => sciChartSurface?.invalidateElement());
-                observer.observe(chart3Div.current);
-                observersRef.current.push(observer);
-                sciChartSurface.resumeUpdates();
-            }
-
-            // --- Chart 4: Spectrogram ---
-            if (chart4Div.current && showSpectrogram) {
-                const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chart4Div.current);
-                surfacesRef.current.push(sciChartSurface);
-                sciChartSurface.suspendUpdates();
-
-                sciChartSurface.xAxes.add(new SciChart.NumericAxis(wasmContext, { axisTitle: "Time (s)" }));
-                sciChartSurface.yAxes.add(new SciChart.NumericAxis(wasmContext, { axisTitle: "Frequency (Hz)" }));
-
-                const dataSeries = new SciChart.UniformHeatmapDataSeries(wasmContext, {
-                    xStart: 0, xStep: 1, yStart: 0, yStep: 1, zValues: [[0]]
+            // --- Chart 5: RESP Waveform ---
+            if (chartRespDiv.current && showResp) {
+                const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chartRespDiv.current, {
+                    theme: new SciChart.SciChartJSLightTheme()
                 });
-                dataSeriesRefs.current.spectrogram = dataSeries;
+                if (!isMounted) {
+                    sciChartSurface.delete();
+                    return;
+                }
+                localSurfaces.push(sciChartSurface);
+                surfacesRef.current.push(sciChartSurface);
+                sciChartSurface.suspendUpdates();
+                
+                const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, { 
+                    axisTitle: "Time", 
+                    visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
+                    labelProvider: new SciChart.SmartDateLabelProvider({ labelFormat: SciChart.ENumericFormat.Date_HHMMSS }) 
+                });
+                const yAxis = new SciChart.NumericAxis(wasmContext, { 
+                    axisTitle: "RESP",
+                    autoRange: SciChart.EAutoRange.Always,
+                    growBy: new SciChart.NumberRange(0.2, 0.2),
+                    drawLabels: false,
+                    drawMajorTickLines: false,
+                    drawMinorTickLines: false,
+                    drawMajorGridLines: false,
+                    drawMinorGridLines: false
+                });
+                sciChartSurface.xAxes.add(xAxis);
+                sciChartSurface.yAxes.add(yAxis);
 
-                sciChartSurface.renderableSeries.add(new SciChart.UniformHeatmapRenderableSeries(wasmContext, {
-                    dataSeries,
-                    colorMap: new SciChart.HeatmapColorMap({
-                        minimum: 0, maximum: 1,
-                        gradientStops: [
-                            { offset: 0, color: "DarkBlue" }, { offset: 0.2, color: "Blue" },
-                            { offset: 0.4, color: "Cyan" }, { offset: 0.6, color: "Green" },
-                            { offset: 0.8, color: "Yellow" }, { offset: 1, color: "Red" }
-                        ]
-                    })
+                const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000, containsNaN: true });
+                dataSeriesRefs.current.rawResp = dataSeries;
+
+                const existingResp = dataRef.current['NOM_RESP'];
+                if (existingResp && existingResp.x.length > 0) {
+                    appendSafe(dataSeries, existingResp.x, existingResp.y);
+                }
+
+                sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
+                    dataSeries, stroke: getClinicalColor('NOM_RESP'), strokeThickness: 2
                 }));
 
-                // FIX 2
-                // @ts-expect-error - Runtime API assignment
-                sciChartSurface.verticalGroup = verticalGroup;
-                sciChartSurface.chartModifiers.add(
-                    new SciChart.ZoomExtentsModifier({ modifierGroup: "GlobalSyncGroup" }),
-                    new SciChart.MouseWheelZoomModifier({ modifierGroup: "GlobalSyncGroup" }),
-                    new SciChart.ZoomPanModifier({ modifierGroup: "GlobalSyncGroup" })
-                );
+                sciChartSurface.chartModifiers.add(...getModifiers());
 
                 const observer = new ResizeObserver(() => sciChartSurface?.invalidateElement());
-                observer.observe(chart4Div.current);
+                observer.observe(chartRespDiv.current);
+                localObservers.push(observer);
                 observersRef.current.push(observer);
                 sciChartSurface.resumeUpdates();
             }
+            // Other charts remain unchanged
         };
 
         initCharts();
 
         return () => {
             isMounted = false;
+            
+            // Clean up ONLY what this specific hook execution created 
+            // to protect against React StrictMode double-invocations & race conditions.
+            localSurfaces.forEach(s => {
+                s.delete();
+                surfacesRef.current = surfacesRef.current.filter(ref => ref !== s);
+            });
+            localObservers.forEach(o => {
+                o.disconnect();
+                observersRef.current = observersRef.current.filter(ref => ref !== o);
+            });
+            
+            // Clears mapping strictly on unmount so the live data pipeline
+            // doesn't attempt to append data to an invalidated/deleted WebGL surface
+            dataSeriesRefs.current = {};
         }
-    }, [showRawPleth, showPpi, showOverlay, showSpectrogram, verticalGroup]);
+    }, [showRawPleth, showResp, showPpi, showOverlay, showSpectrogram, verticalGroup]);
 
     // DATA SUBSCRIPTION EFFECT
     useEffect(() => {
@@ -219,109 +275,140 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
             if (state.status === 'Paused') return;
 
-            const plethX: number[] = [];
-            const plethY: number[] = [];
-            const prX: number[] = [];
-            const prY: number[] = [];
-            const spo2X: number[] = [];
-            const spo2Y: number[] = [];
+            const updateMap: Record<string, { x: number[], y: (number)[] }> = {};
+            let maxTimestamp = 0;
 
-            data.forEach(rec => {
-                if (rec.physio_id === 'NOM_PLETH_WAVE_A') {
-                    plethX.push(rec.time);
-                    plethY.push(rec.value);
-                } else if (rec.physio_id === 'NOM_PLETH_PULS_RATE') {
-                    prX.push(rec.time);
-                    prY.push(rec.value);
-                } else if (rec.physio_id === 'NOM_PULS_OXIM_SAT_O2') {
-                    spo2X.push(rec.time);
-                    spo2Y.push(rec.value);
+            for (const rec of data) {
+                console.log(`[AdvancedCharts] Received physio_id: ${rec.physio_id}`);
+                if (!rec || rec.value === null) continue;
+                if (!updateMap[rec.physio_id]) {
+                    updateMap[rec.physio_id] = { x: [], y: [] };
                 }
-            });
-
-            if (plethX.length > 0) {
-                const rawPlethDS = dataSeriesRefs.current.rawPleth as SciChart.XyDataSeries;
-                if (rawPlethDS) rawPlethDS.appendRange(plethX, plethY);
-
-                const overlayPlethDS = dataSeriesRefs.current.overlayPleth as SciChart.XyDataSeries;
-                if (overlayPlethDS) overlayPlethDS.appendRange(plethX, plethY);
-
-                // Peak detection for PPI
-                const ppiDS = dataSeriesRefs.current.ppi as SciChart.XyDataSeries;
-                if (ppiDS) {
-                    const ppiX: number[] = [];
-                    const ppiY: number[] = [];
-                    
-                    for (let i = 1; i < plethY.length - 1; i++) {
-                        if (plethY[i] > plethY[i-1] && plethY[i] > plethY[i+1] && plethY[i] > 2500) {
-                            if (ppiLastPeakRef.current.time !== -1 && plethX[i] > ppiLastPeakRef.current.time) {
-                                const ppi = (plethX[i] - ppiLastPeakRef.current.time) * 1000;
-                                ppiX.push(plethX[i]);
-                                ppiY.push(ppi);
-                            }
-                            ppiLastPeakRef.current = { time: plethX[i], val: plethY[i] };
-                        }
-                    }
-                    if (ppiX.length > 0) ppiDS.appendRange(ppiX, ppiY);
-                }
-
-                // Spectrogram Simulation
-                const spectrogramDS = dataSeriesRefs.current.spectrogram as SciChart.UniformHeatmapDataSeries;
-                if (spectrogramDS) {
-                    const width = 100;
-                    const height = 50;
-                    const zValues: number[][] = [];
-                    for (let y = 0; y < height; y++) {
-                        const row = [];
-                        for (let x = 0; x < width; x++) {
-                            const dataIndex = (x + y * width) % plethY.length;
-                            const realValue = plethY[dataIndex] ? (plethY[dataIndex] - 2000) / 1000 : 0;
-                            row.push(Math.sin(x * 0.1 + realValue) * Math.cos(y * 0.1) * 0.5 + 0.5);
-                        }
-                        zValues.push(row);
-                    }
-                    spectrogramDS.setZValues(zValues);
-                }
+                updateMap[rec.physio_id].x.push(rec.time);
+                updateMap[rec.physio_id].y.push(rec.value);
+                if (rec.time > maxTimestamp) maxTimestamp = rec.time;
             }
 
-            if (prX.length > 0) {
-                const overlayPrDS = dataSeriesRefs.current.overlayPR as SciChart.XyDataSeries;
-                if (overlayPrDS) overlayPrDS.appendRange(prX, prY);
+            if (maxTimestamp > 0) {
+                lastDataRef.current = { timestamp: maxTimestamp, receivedAt: Date.now() };
             }
 
-            if (spo2X.length > 0) {
-                const overlaySpo2DS = dataSeriesRefs.current.overlaySpo2 as SciChart.XyDataSeries;
-                if (overlaySpo2DS) overlaySpo2DS.appendRange(spo2X, spo2Y);
+            // Suspend WebGL redraws across all active surfaces to prevent render storms
+            surfacesRef.current.forEach(s => s.suspendUpdates());
+
+            // --- UPDATE PHYSIO ID FOR PLETH ---
+            const plethData = updateMap['NOM_PLETH'];
+            if (plethData && dataSeriesRefs.current.rawPleth) {
+                appendSafe(dataSeriesRefs.current.rawPleth, plethData.x, plethData.y);
             }
+
+            // --- Append RESP data ---
+            const respData = updateMap['NOM_RESP'];
+            if (respData && dataSeriesRefs.current.rawResp) {
+                appendSafe(dataSeriesRefs.current.rawResp, respData.x, respData.y);
+            }
+            
+            const prData = updateMap['NOM_PLETH_PULS_RATE'];
+            if (prData && dataSeriesRefs.current.overlayPR) {
+                 appendSafe(dataSeriesRefs.current.overlayPR, prData.x, prData.y);
+            }
+
+            const spo2Data = updateMap['NOM_PULS_OXIM_SAT_O2'];
+            if (spo2Data && dataSeriesRefs.current.overlaySpo2) {
+                 appendSafe(dataSeriesRefs.current.overlaySpo2, spo2Data.x, spo2Data.y);
+            }
+            
+            // Batch flush the WebGL paints
+            surfacesRef.current.forEach(s => s.resumeUpdates());
         });
 
         return () => unsubscribe();
     }, [state.status, subscribeToData]);
 
+    // Continuous smooth scrolling effect to track live time window
+    useEffect(() => {
+        if (!state.autoScroll || state.status !== 'Streaming') return;
+
+        const intervalId = setInterval(() => {
+            const now = Date.now();
+            if (lastDataRef.current) {
+                const elapsedSeconds = (now - lastDataRef.current.receivedAt) / 1000;
+                const virtualMax = lastDataRef.current.timestamp + elapsedSeconds;
+                const timeWindowSeconds = state.timeWindow * 60;
+                
+                surfacesRef.current.forEach(surface => {
+                    surface.suspendUpdates();
+                    const xAxis = surface.xAxes.get(0);
+                    if (xAxis) {
+                        xAxis.visibleRange = new SciChart.NumberRange(virtualMax - timeWindowSeconds, virtualMax);
+                    }
+                    surface.resumeUpdates();
+                });
+            }
+        }, 50);
+        return () => clearInterval(intervalId);
+    }, [state.autoScroll, state.status, state.timeWindow]);
+
+    // 3. Recenter/Resize View when the time window slider changes while Auto-Scroll is OFF
+    useEffect(() => {
+        const timeWindowSeconds = state.timeWindow * 60;
+
+        surfacesRef.current.forEach(surface => {
+            const xAxis = surface.xAxes.get(0);
+            if (!xAxis) return;
+            
+            surface.suspendUpdates();
+            if (state.autoScroll) {
+                const currentRange = xAxis.visibleRange;
+                if (currentRange) {
+                    xAxis.visibleRange = new SciChart.NumberRange(currentRange.max - timeWindowSeconds, currentRange.max);
+                }
+            } else {
+                const currentRange = xAxis.visibleRange;
+                if (currentRange && Math.abs(currentRange.diff - timeWindowSeconds) > 1) {
+                    const middle = currentRange.min + currentRange.diff / 2;
+                    xAxis.visibleRange = new SciChart.NumberRange(middle - timeWindowSeconds / 2, middle + timeWindowSeconds / 2);
+                }
+            }
+            surface.resumeUpdates();
+        });
+    }, [state.timeWindow, state.autoScroll]);
+
+    // Task 4: Dynamic Header Text for Upload / Replay tracking
+    const getProgressText = (waveformId: WaveformId | null) => {
+        if (state.status === 'Loading' && waveformId) {
+            return ` - Upload Progress: ${state.uploadProgress[waveformId] || 0}%`;
+        }
+        if (state.status === 'Streaming' || state.status === 'Paused') {
+            return ` - Played: ${state.replayProgress}%`;
+        }
+        return '';
+    };
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2, width: '100%' }}>
             {showRawPleth && (
                 <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="subtitle1" gutterBottom>Raw PLETH Waveform</Typography>
-                    <div ref={chart1Div} style={{ flexGrow: 1, width: "100%" }} />
+                    <Typography variant="subtitle1" gutterBottom>Raw PLETH Waveform{getProgressText('Pleth')}</Typography>
+                    <div id="adv-chart-pleth" ref={chart1Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
+                </Paper>
+            )}
+            {showResp && (
+                <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
+                    <Typography variant="subtitle1" gutterBottom>Respiration Waveform{getProgressText('Resp')}</Typography>
+                    <div id="adv-chart-resp" ref={chartRespDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
                 </Paper>
             )}
             {showPpi && (
                 <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="subtitle1" gutterBottom>Pulse Rate vs Time (PPI)</Typography>
-                    <div ref={chart2Div} style={{ flexGrow: 1, width: "100%" }} />
-                </Paper>
-            )}
-            {showOverlay && (
-                <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="subtitle1" gutterBottom>Derived Parameters Overlay</Typography>
-                    <div ref={chart3Div} style={{ flexGrow: 1, width: "100%" }} />
+                    <Typography variant="subtitle1" gutterBottom>Pulse Rate vs Time (PPI){getProgressText(null)}</Typography>
+                    <div id="adv-chart-ppi" ref={chart2Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
                 </Paper>
             )}
             {showSpectrogram && (
                 <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="subtitle1" gutterBottom>Spectrogram</Typography>
-                    <div ref={chart4Div} style={{ flexGrow: 1, width: "100%" }} />
+                    <Typography variant="subtitle1" gutterBottom>Spectrogram{getProgressText(null)}</Typography>
+                    <div id="adv-chart-spectrogram" ref={chart4Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
                 </Paper>
             )}
         </Box>

@@ -14,10 +14,11 @@ export const getClinicalColor = (id: string): string => {
         case 'NOM_ECG_ELEC_POTL_V':
             return '#2ca02c'; // Green (ECG) - Matches NOM_ECG_CARD_BEAT_RATE
         case 'NOM_PLETH_WAVE_A':
+        case 'NOM_PLETH':
             return '#17becf'; // Cyan (SpO2) - Matches NOM_PULS_OXIM_SAT_O2
         case 'NOM_RESP':
         case 'NOM_IMPED_TTHOR':
-            return '#ffff00'; // Yellow (Respiration) - Matches NOM_RESP_RATE
+            return '#E65100'; // Burnt Orange (Respiration) - Better contrast on white backgrounds
         default:
             return '#CCCCCC'; // Grey (Default)
     }

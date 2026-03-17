@@ -26,7 +26,9 @@ export const useSciChart = (divElementId: string) => {
                 const container = document.getElementById(divElementId);
                 if (!container) return;
 
-                const res = await SciChart.SciChartSurface.create(divElementId);
+                const res = await SciChart.SciChartSurface.create(divElementId, {
+                    theme: new SciChart.SciChartJSLightTheme()
+                });
                 
                 // Handle race condition: component unmounted during async creation
                 if (!isMounted) {
@@ -35,7 +37,6 @@ export const useSciChart = (divElementId: string) => {
                 }
 
                 surface = res.sciChartSurface;
-                surface.background = "white";
                 
                 // Add placeholder axes to prevent "Cannot draw annotations before axes have been configured" error
                 surface.xAxes.add(new SciChart.NumericAxis(res.wasmContext));
