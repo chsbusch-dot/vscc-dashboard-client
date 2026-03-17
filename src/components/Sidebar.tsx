@@ -292,7 +292,7 @@ const Sidebar = () => {
             
             loadFilesFromState().catch(console.error);
         }
-    }, [triggerUploadCount, state.dataSource, state.fileInputs, state.providerMappings, actions]);
+    }, [triggerUploadCount, state.dataSource, state.fileInputs, state.providerMappings, actions, state.globalWaveformToggles]);
     
     const handlePauseResume = () => actions.setStatus(state.status === 'Streaming' ? 'Paused' : 'Streaming');
     

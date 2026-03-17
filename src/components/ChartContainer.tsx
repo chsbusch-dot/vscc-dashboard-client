@@ -41,7 +41,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     
     const [isSignalLost, setIsSignalLost] = useState(false);
     const isSignalLostRef = useRef(false);
-    const lastChartDataReceivedAtRef = useRef<number>(Date.now());
+    const lastChartDataReceivedAtRef = useRef<number>(0);
 
     // Update the visible stats on a throttled interval to reduce UI flicker and render cost.
     useEffect(() => {
@@ -197,7 +197,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         );
 
         surface.resumeUpdates(); // Rule 3
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [surface, wasmContext, physioIdsStr]);
     // Keep Zoom Add this to ChartContainer.tsx
     useEffect(() => {
