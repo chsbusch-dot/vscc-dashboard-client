@@ -102,7 +102,7 @@ const Sidebar = () => {
                 }
             });
         }
-    }, [state.globalWaveformToggles, state.providerMappings, state.dataSource, mqttClient.current?.connected]);
+    }, [state.globalWaveformToggles, state.providerMappings, state.dataSource, state.status]);
 
     const stopAllStreams = () => {
         if (pollingInterval.current) clearInterval(pollingInterval.current);
@@ -209,7 +209,7 @@ const Sidebar = () => {
                                     actions.setUploadProgress(waveformId, 100);
                                     resolve(reader.result as string);
                                 };
-                                reader.onerror = (err) => reject(err);
+                                reader.onerror = () => reject(new Error("File reading failed"));
                                 reader.readAsText(file);
                             });
                             

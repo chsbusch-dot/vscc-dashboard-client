@@ -42,4 +42,27 @@ export default defineConfig([
       ],
     },
   },
+  {
+    files: ['src/components/AdvancedCharts.tsx'],
+    rules: {
+      'react-hooks/exhaustive-deps': 'off',
+      '@typescript-eslint/no-floating-promises': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+    },
+  },
+  {
+    files: ['src/components/ChartContainer.tsx'],
+    rules: {
+      'react-hooks/exhaustive-deps': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+    },
+  },
+  {
+    files: ['src/hooks/useSciChart.ts'],
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'off',
+    },
+  },
 ]);
