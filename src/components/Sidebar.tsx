@@ -290,7 +290,7 @@ const Sidebar = () => {
                 actions.setStatus('Ready');
             };
             
-            loadFilesFromState();
+            loadFilesFromState().catch(console.error);
         }
     }, [triggerUploadCount, state.dataSource, state.fileInputs, state.providerMappings, actions]);
     
@@ -317,15 +317,18 @@ const Sidebar = () => {
             actions.appendData(records);
             actions.setStatus('Streaming');
             if (state.dataSource === 'url') {
-                pollingInterval.current = window.setInterval(async () => {
-                    const resp = await fetch(state.jsonUrl);
-                    const newText = await resp.text();
-                    const newRecords = processRawData(newText);
-                    actions.appendData(newRecords);
+                pollingInterval.current = window.setInterval(() => {
+                    const poll = async () => {
+                        const resp = await fetch(state.jsonUrl);
+                        const newText = await resp.text();
+                        const newRecords = processRawData(newText);
+                        actions.appendData(newRecords);
+                    };
+                    poll().catch(console.error);
                 }, 5000);
             }
         };
-        startPolling();
+        startPolling().catch(console.error);
     };
 
     const handleReplay = async () => {
@@ -432,7 +435,7 @@ const Sidebar = () => {
                 >
                     {activeMode === 'live' ? (state.status === 'Paused' ? 'Resume' : 'Pause') : 'Play Live'}
                 </StyledButton>
-                <Button variant="contained" size="small" onClick={handleReplay}>Replay</Button>
+                <Button variant="contained" size="small" onClick={() => { void handleReplay(); }}>Replay</Button>
                 <StyledButton variant="contained" color="error" size="small" onClick={handleStop}>Stop</StyledButton>
             </Box>
 
