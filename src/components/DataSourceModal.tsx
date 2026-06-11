@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
     Box,
     TextField,
@@ -43,18 +43,21 @@ export const DataSourceModal: React.FC<DataSourceModalProps> = ({ open, onClose,
         upload: ''
     });
 
-    useEffect(() => {
-        if (open) {
-            setLocalProvider(state.dataSource || 'mqtt');
-            setLocalMappings(state.providerMappings);
-            setLocalEndpoints({
-                url: state.jsonUrl,
-                websocket: state.websocketUrl,
-                mqtt: state.mqttBrokerUrl,
-                upload: ''
-            });
-        }
-    }, [open, state.dataSource, state.providerMappings, state.jsonUrl, state.websocketUrl, state.mqttBrokerUrl]);
+    // Synchronize local state when modal opens
+    const [prevOpen, setPrevOpen] = useState(open);
+    if (open && !prevOpen) {
+        setLocalProvider(state.dataSource || 'mqtt');
+        setLocalMappings(state.providerMappings);
+        setLocalEndpoints({
+            url: state.jsonUrl,
+            websocket: state.websocketUrl,
+            mqtt: state.mqttBrokerUrl,
+            upload: ''
+        });
+        setPrevOpen(true);
+    } else if (!open && prevOpen) {
+        setPrevOpen(false);
+    }
 
     const handleSave = () => {
         // Task 2: Upload Data Validation
@@ -195,7 +198,7 @@ export const DataSourceModal: React.FC<DataSourceModalProps> = ({ open, onClose,
                                                 />
                                             </Button>
                                             <Typography variant="body2" color={state.fileInputs[id] ? "text.primary" : "text.secondary"} sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                {state.fileInputs[id] ? state.fileInputs[id]!.name : 'No file selected'}
+                                                {state.fileInputs[id]?.name || 'No file selected'}
                                             </Typography>
                                         </Box>
                                     ) : (
