@@ -11,10 +11,6 @@ jobs:
     name: Build and Typecheck
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: ./vscc-dashboard-client
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,10 +20,13 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: ./vscc-dashboard-client/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run tests
+        run: npm test
 
       - name: Build project
         run: npm run build
