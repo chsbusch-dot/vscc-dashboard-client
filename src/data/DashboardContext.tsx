@@ -79,10 +79,13 @@ interface DashboardContextType {
     subscribeToData: (callback: (records: TelemetryRecord[] | 'clear') => void) => () => void;
 }
 
-// Backend host: defaults to wherever the dashboard is served from, which is correct
-// for the single-host install. Override for development (e.g. vite dev server on a
-// laptop, stack on another box) with VITE_VSCC_HOST in .env.local.
+// Backend host resolution, in priority order:
+// 1. window.VSCC_HOST — runtime config written by the Docker entrypoint when the
+//    container runs with -e VSCC_HOST=<backend-ip> (two-host installs, no rebuild)
+// 2. VITE_VSCC_HOST — build-time/dev override (.env.local)
+// 3. the host the dashboard is served from — correct for the single-host install
 const VSCC_HOST: string =
+    (typeof window !== 'undefined' && (window as { VSCC_HOST?: string }).VSCC_HOST) ||
     (import.meta.env.VITE_VSCC_HOST as string | undefined) ||
     (typeof window !== 'undefined' ? window.location.hostname : 'localhost');
 
