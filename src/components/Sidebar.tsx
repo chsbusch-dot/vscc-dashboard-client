@@ -31,7 +31,7 @@ const StyledButton = styled(Button)(({ theme, color }) => ({
 }));
 
 const Sidebar = () => {
-    const { state, actions } = useDashboard();
+    const { state, actions, stopStreamsRef } = useDashboard();
     const [modalOpen, setModalOpen] = useState(false);
     const [triggerUploadCount, setTriggerUploadCount] = useState(0);
     
@@ -266,6 +266,14 @@ const Sidebar = () => {
         actions.setReplayProgress(0);
         setActiveMode(null);
     };
+
+    // Expose the stop handler so other features (e.g. loading a stored session
+    // from the Sessions drawer) can stop an active live stream. Re-registered
+    // every render to keep the closure fresh.
+    useEffect(() => {
+        stopStreamsRef.current = handleStop;
+        return () => { stopStreamsRef.current = null; };
+    });
 
     const handleStartLive = () => {
         if (activeMode === 'live') { handlePauseResume(); return; }

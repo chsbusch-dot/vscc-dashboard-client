@@ -1,0 +1,35 @@
+/**
+ * Small pure formatting helpers for the Sessions and Settings features.
+ */
+
+/**
+ * Formats a duration given in seconds as a compact human string,
+ * e.g. 42 -> "42s", 330 -> "5m 30s", 11100 -> "3h 05m".
+ */
+export const formatDuration = (seconds: number): string => {
+    if (!Number.isFinite(seconds) || seconds < 0) return '--';
+    const total = Math.round(seconds);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${h}h ${m.toString().padStart(2, '0')}m`;
+    if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
+    return `${s}s`;
+};
+
+/**
+ * Pretty-prints a byte count, e.g. 2048 -> "2.0 KB", 5368709120 -> "5.0 GB".
+ */
+export const formatBytes = (bytes: number): string => {
+    if (!Number.isFinite(bytes) || bytes < 0) return '--';
+    if (bytes < 1024) return `${Math.round(bytes)} B`;
+    const units = ['KB', 'MB', 'GB', 'TB', 'PB'] as const;
+    let value = bytes;
+    let unit: string = 'B';
+    for (const u of units) {
+        if (value < 1024) break;
+        value /= 1024;
+        unit = u;
+    }
+    return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
+};

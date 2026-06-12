@@ -4,6 +4,8 @@ import { PHYSIO_META, type PhysioId } from '../data/constants';
 import { getClinicalColor } from '../utils/colors';
 import { useDashboard } from '../data/DashboardContext';
 import { useSciChart } from '../hooks/useSciChart';
+import { formatChartTime } from '../utils/timeFormat';
+import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../utils/chartTimeAxis';
 
 import * as SciChart from "scichart";
 
@@ -29,6 +31,11 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     // Keep a ref to autoScroll state to access it inside the stable init effect
     const autoScrollRef = useRef(state.autoScroll);
     autoScrollRef.current = state.autoScroll;
+
+    // Time display mode (Local vs UTC) read by label/cursor formatters at format
+    // time, so toggling never requires recreating the surface or its axes.
+    const timeDisplayRef = useRef(state.timeDisplay);
+    timeDisplayRef.current = state.timeDisplay;
 
     // Use the custom hook for initialization and lifecycle management
     const { sciChartSurface: surface, wasmContext } = useSciChart(divElementId);
@@ -81,11 +88,14 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
         // Configure X-Axis
         const now = Date.now() / 1000;
+        const xLabelProvider = new SciChart.SmartDateLabelProvider({
+            labelFormat: SciChart.ENumericFormat.Date_HHMMSS
+        });
+        // Axis labels and cursor labels follow the Local/UTC time display toggle
+        applyTimeDisplayToLabelProvider(xLabelProvider, () => timeDisplayRef.current);
         surface.xAxes.add(new SciChart.DateTimeNumericAxis(wasmContext, {
             visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
-            labelProvider: new SciChart.SmartDateLabelProvider({
-                labelFormat: SciChart.ENumericFormat.Date_HHMMSS
-            }),
+            labelProvider: xLabelProvider,
             drawMajorBands: false,
         }));
 
@@ -179,15 +189,10 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 showTooltip: true,
                 showRolloverLine: true,
                 tooltipDataTemplate: (seriesInfo: SciChart.SeriesInfo) => {
-                    const date = new Date(seriesInfo.xValue * 1000);
-                    
-                    // FIX: Use UTC methods to align exactly with SciChart's native SmartDateLabelProvider
-                    const h = date.getUTCHours().toString().padStart(2, '0');
-                    const m = date.getUTCMinutes().toString().padStart(2, '0');
-                    const s = date.getUTCSeconds().toString().padStart(2, '0');
-                    const ms = date.getUTCMilliseconds().toString().padStart(3, '0');
-                    const timeStr = `${h}:${m}:${s}.${ms}`;
-                    
+                    // Shared formatter keeps the rollover aligned with the axis labels
+                    // for both Local and UTC display modes.
+                    const timeStr = formatChartTime(seriesInfo.xValue, timeDisplayRef.current, { millis: true });
+
                     const unit = PHYSIO_META[seriesInfo.seriesName as PhysioId]?.unit || '';
                     const value = (seriesInfo.yValue === undefined || Number.isNaN(seriesInfo.yValue)) ? '---' : seriesInfo.yValue.toFixed(2);
                     return [`Time: ${timeStr}`, 
@@ -198,6 +203,14 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
         surface.resumeUpdates(); // Rule 3
     }, [surface, wasmContext, physioIdsStr]);
+
+    // Re-render axis labels when the Local/UTC toggle changes.
+    // Formatting only: the surface, axes and series are NOT recreated.
+    useEffect(() => {
+        if (!surface) return;
+        refreshSurfaceTimeLabels(surface);
+    }, [surface, state.timeDisplay]);
+
     // Keep Zoom Add this to ChartContainer.tsx
     useEffect(() => {
         const container = document.getElementById(divElementId);

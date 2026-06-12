@@ -3,6 +3,7 @@ import { Box, Paper, Typography } from '@mui/material';
 import * as SciChart from 'scichart';
 import { useDashboard, type WaveformId } from '../data/DashboardContext';
 import { getClinicalColor } from '../utils/colors';
+import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../utils/chartTimeAxis';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
@@ -69,6 +70,13 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
     useEffect(() => {
         autoScrollRef.current = state.autoScroll;
     }, [state.autoScroll]);
+
+    // Local/UTC display mode, read by label formatters at format time so the
+    // toggle never forces surface re-creation.
+    const timeDisplayRef = useRef(state.timeDisplay);
+    useEffect(() => {
+        timeDisplayRef.current = state.timeDisplay;
+    }, [state.timeDisplay]);
 
     // 1. DOM Listeners: Disable auto-scroll when user clicks, touches, or uses the mouse wheel on any chart
     useEffect(() => {
@@ -141,6 +149,13 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 ];
             };
 
+            // Builds an X-axis label provider wired to the Local/UTC display toggle
+            const makeTimeLabelProvider = () => {
+                const provider = new SciChart.SmartDateLabelProvider({ labelFormat: SciChart.ENumericFormat.Date_HHMMSS });
+                applyTimeDisplayToLabelProvider(provider, () => timeDisplayRef.current);
+                return provider;
+            };
+
             // --- Chart 1: Time-Domain Waveform Plot (Raw PLETH Signal) ---
             if (chart1Div.current && showRawPleth) {
                 const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chart1Div.current, {
@@ -154,12 +169,12 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 surfacesRef.current.push(sciChartSurface);
                 sciChartSurface.suspendUpdates();
                 
-                const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, { 
-                    axisTitle: "Time", 
+                const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, {
+                    axisTitle: "Time",
                     visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
-                    labelProvider: new SciChart.SmartDateLabelProvider({ labelFormat: SciChart.ENumericFormat.Date_HHMMSS }) 
+                    labelProvider: makeTimeLabelProvider()
                 });
-                const yAxis = new SciChart.NumericAxis(wasmContext, { 
+                const yAxis = new SciChart.NumericAxis(wasmContext, {
                     axisTitle: "Amplitude (A-D Units)",
                     autoRange: SciChart.EAutoRange.Always,
                     growBy: new SciChart.NumberRange(0.1, 0.1)
@@ -201,12 +216,12 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 surfacesRef.current.push(sciChartSurface);
                 sciChartSurface.suspendUpdates();
                 
-                const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, { 
-                    axisTitle: "Time", 
+                const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, {
+                    axisTitle: "Time",
                     visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
-                    labelProvider: new SciChart.SmartDateLabelProvider({ labelFormat: SciChart.ENumericFormat.Date_HHMMSS }) 
+                    labelProvider: makeTimeLabelProvider()
                 });
-                const yAxis = new SciChart.NumericAxis(wasmContext, { 
+                const yAxis = new SciChart.NumericAxis(wasmContext, {
                     axisTitle: "RESP",
                     autoRange: SciChart.EAutoRange.Always,
                     growBy: new SciChart.NumberRange(0.2, 0.2),
@@ -263,6 +278,12 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             dataSeriesRefs.current = {};
         }
     }, [showRawPleth, showResp, showPpi, showOverlay, showSpectrogram, verticalGroup]);
+
+    // Re-render axis labels when the Local/UTC toggle changes.
+    // Formatting only: existing surfaces are invalidated, never recreated.
+    useEffect(() => {
+        surfacesRef.current.forEach(surface => refreshSurfaceTimeLabels(surface));
+    }, [state.timeDisplay]);
 
     // DATA SUBSCRIPTION EFFECT
     useEffect(() => {
