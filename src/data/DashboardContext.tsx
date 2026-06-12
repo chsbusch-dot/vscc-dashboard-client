@@ -79,12 +79,19 @@ interface DashboardContextType {
     subscribeToData: (callback: (records: TelemetryRecord[] | 'clear') => void) => () => void;
 }
 
+// Backend host: defaults to wherever the dashboard is served from, which is correct
+// for the single-host install. Override for development (e.g. vite dev server on a
+// laptop, stack on another box) with VITE_VSCC_HOST in .env.local.
+const VSCC_HOST: string =
+    (import.meta.env.VITE_VSCC_HOST as string | undefined) ||
+    (typeof window !== 'undefined' ? window.location.hostname : 'localhost');
+
 const initialState: DashboardState = {
     status: 'Ready',
     dataSource: 'mqtt',
-    jsonUrl: 'http://192.168.1.188:8000/DataExportVSC.json',
-    websocketUrl: 'ws://192.168.1.188:8000/ws/stream',
-    mqttBrokerUrl: 'ws://192.168.1.188:8083/mqtt',
+    jsonUrl: `http://${VSCC_HOST}:8000/DataExportVSC.json`,
+    websocketUrl: `ws://${VSCC_HOST}:8000/ws/stream`,
+    mqttBrokerUrl: `ws://${VSCC_HOST}:8083/mqtt`,
     globalWaveformToggles: {
         VitalSigns: true,
         ECG: false,

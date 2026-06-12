@@ -18,7 +18,7 @@
     "mqtt": "^5.15.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "scichart": "^5.0.178"
+    "scichart": "^5.2.35"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
