@@ -23,7 +23,6 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useDashboard, type TelemetryRecord } from '../data/DashboardContext';
@@ -31,12 +30,12 @@ import type { PhysioId } from '../data/constants';
 import {
     createSession,
     deleteSession,
-    exportSession,
     fetchSessionData,
     fetchSessions,
     fetchSessionSignals,
     patchSession,
     sessionDownloadUrl,
+    sessionsDownloadAllUrl,
     type SessionInfo,
     type SessionSignals,
 } from '../data/sessionsApi';
@@ -66,7 +65,6 @@ interface SessionRowProps {
     /** undefined = not fetched yet, null = fetch failed; both render no legend */
     signals: SessionSignals | null | undefined;
     onLoad: (session: SessionInfo) => void;
-    onExport: (session: SessionInfo) => void;
     onDownload: (session: SessionInfo) => void;
     onDeleteRequest: (session: SessionInfo) => void;
     onPatched: (updated: SessionInfo) => void;
@@ -82,7 +80,6 @@ const SessionRow: React.FC<SessionRowProps> = ({
     anyBusy,
     signals,
     onLoad,
-    onExport,
     onDownload,
     onDeleteRequest,
     onPatched,
@@ -190,18 +187,6 @@ const SessionRow: React.FC<SessionRowProps> = ({
                                 onClick={() => onLoad(session)}
                             >
                                 {busy ? <CircularProgress size={18} /> : <PlayArrowIcon fontSize="small" />}
-                            </IconButton>
-                        </span>
-                    </Tooltip>
-                    <Tooltip title="Export to files on the server">
-                        <span>
-                            <IconButton
-                                size="small"
-                                aria-label={`Export session ${session.id}`}
-                                disabled={anyBusy}
-                                onClick={() => onExport(session)}
-                            >
-                                <FileDownloadIcon fontSize="small" />
                             </IconButton>
                         </span>
                     </Tooltip>
@@ -384,29 +369,20 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
         }
     };
 
-    const handleExport = async (session: SessionInfo) => {
-        setBusySessionId(session.id);
-        try {
-            const result = await exportSession(session.id);
-            if (result.ok) {
-                const rows = (result.numeric_rows ?? 0) + (result.waveform_rows ?? 0);
-                showSnack({
-                    severity: 'success',
-                    message: `Exported session #${session.id} (${rows} rows) to ${result.path ?? 'the sessions directory'}`,
-                });
-            } else {
-                showSnack({ severity: 'error', message: result.error ?? `Export failed for session #${session.id}` });
-            }
-        } catch (err) {
-            showSnack({ severity: 'error', message: `Export failed for session #${session.id}: ${errorMessage(err)}` });
-        } finally {
-            setBusySessionId(null);
-        }
+    // Same native-download pattern for the everything-zip.
+    const handleDownloadAll = () => {
+        const anchor = document.createElement('a');
+        anchor.href = sessionsDownloadAllUrl();
+        anchor.download = '';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        showSnack({
+            severity: 'info',
+            message: 'Preparing download of all sessions — the save dialog appears when streaming starts',
+        });
     };
 
-    // Native browser download — packages can be several GB, so never fetch/blob.
-    // A temporary anchor lets the browser stream straight to disk; the server's
-    // Content-Disposition header supplies the filename.
     const handleDownload = (session: SessionInfo) => {
         const anchor = document.createElement('a');
         anchor.href = sessionDownloadUrl(session.id);
@@ -490,6 +466,15 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
                             New session
                         </Button>
                         {creatingSession && <CircularProgress size={16} />}
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<SaveAltIcon />}
+                            disabled={sessions.length === 0}
+                            onClick={handleDownloadAll}
+                        >
+                            Download all
+                        </Button>
                     </Stack>
 
                     {listError && <Alert severity="error" sx={{ mb: 1 }}>{listError}</Alert>}
@@ -509,7 +494,6 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
                                     anyBusy={busySessionId !== null}
                                     signals={signalsCache[session.id]?.signals}
                                     onLoad={(s) => { void handleLoad(s); }}
-                                    onExport={(s) => { void handleExport(s); }}
                                     onDownload={handleDownload}
                                     onDeleteRequest={setConfirmDelete}
                                     onPatched={handlePatched}
