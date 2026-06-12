@@ -1,5 +1,8 @@
 # MP50 Vital Sign Dashboard
 
+> ⚠️ **Research and education use only — not a medical device.** This software is not
+> FDA/CE cleared and must not be used for clinical diagnosis, monitoring, or treatment decisions.
+
 Real-time physiological telemetry dashboard for the **Philips MP50** patient monitor.
 Captured waveforms and numerics (ECG, SpO₂, Pleth, Respiration, EEG, NIBP) are streamed
 into a React + [SciChart.js](https://www.scichart.com/) WebGL canvas and rendered at 60 FPS.
