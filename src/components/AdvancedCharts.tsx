@@ -279,7 +279,6 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             let maxTimestamp = 0;
 
             for (const rec of data) {
-                console.log(`[AdvancedCharts] Received physio_id: ${rec.physio_id}`);
                 if (!rec || rec.value === null) continue;
                 if (!updateMap[rec.physio_id]) {
                     updateMap[rec.physio_id] = { x: [], y: [] };

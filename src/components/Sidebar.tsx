@@ -145,6 +145,11 @@ const Sidebar = () => {
             
             const loadFilesFromState = async () => {
                 actions.setStatus('Loading');
+                // Update the ref synchronously too: the CSV chunk loop guards on
+                // statusRef.current and would otherwise read the stale 'Ready' value
+                // (the effect that syncs this ref hasn't re-run yet) and break on its
+                // first iteration, silently dropping all waveform data.
+                statusRef.current = 'Loading';
                 actions.clearData();
                 
                 const filePromises = (Object.keys(state.fileInputs) as WaveformId[]).map(async (waveformId) => {
@@ -333,7 +338,20 @@ const Sidebar = () => {
         startLiveStream(() => {
             const client = mqtt.connect(state.mqttBrokerUrl);
             mqttClient.current = client;
-            client.on('connect', () => actions.setStatus('Streaming'));
+            client.on('connect', () => {
+                actions.setStatus('Streaming');
+                // Subscribe here: the subscription effect only fires on state changes
+                // and skips while the client is still connecting, so the initial
+                // CONNACK would otherwise never trigger a subscribe on remote brokers.
+                (Object.keys(mappingsRef.current) as WaveformId[]).forEach((id) => {
+                    const topic = mappingsRef.current[id].mappings.mqtt;
+                    if (topic && togglesRef.current[id]) {
+                        client.subscribe(topic, { qos: 0 }, (err) => {
+                            if (!err) console.log(`Successfully subscribed to MQTT topic: ${topic}`);
+                        });
+                    }
+                });
+            });
             client.on('message', handleMqttMessage);
             client.on('error', (err) => { console.error("MQTT error:", err); handleStop(); });
             client.on('close', () => { if (activeMode === 'live' && state.dataSource === 'mqtt') handleStop(); });

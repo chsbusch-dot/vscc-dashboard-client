@@ -1,119 +1,119 @@
-# React + TypeScript + Vite
+# MP50 Vital Sign Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Real-time physiological telemetry dashboard for the **Philips MP50** patient monitor.
+Captured waveforms and numerics (ECG, SpO₂, Pleth, Respiration, EEG, NIBP) are streamed
+into a React + [SciChart.js](https://www.scichart.com/) WebGL canvas and rendered at 60 FPS.
 
-Currently, two official plugins are available:
+This is the **frontend** of the [VSCapture-Charts](https://github.com/chsbusch-dot/vscc-dashboard-client)
+system. It consumes data published by the .NET capture service and Python MQTT/TimescaleDB
+backend (see the `vscc-mqtt-server` repository).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+![MP50 Vital Sign Dashboard](docs/screenshots/dashboard-full.png)
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Features
 
-## Expanding the ESLint configuration
+- **Live MQTT streaming** over WebSocket (`mqtt` client) with per-channel topic mapping
+- **High-frequency waveforms** — Pleth and Respiration rendered as continuous traces, plus ECG/EEG channels
+- **Numeric vitals** — SpO₂, pulse rate, NIBP (systolic/diastolic/mean), respiration rate, heart rate
+- **Multiple data sources** — live MQTT broker, URL polling, and local file upload / replay of recorded exports
+- **Synchronized zoom & pan** across all charts (`GlobalSyncGroup`)
+- **FIFO-bounded series** so long sessions don't leak memory
+- **Auto-scroll / follow-live** toggle, adjustable time window, and per-channel selection
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Waveforms & numerics
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+![Waveform and numeric charts](docs/screenshots/chart-grid.png)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+> The screenshots above show SpO₂ and pulse trends, a raw plethysmograph pulse waveform, and a
+> respiration trace from recorded MP50 data, alongside an EEG channel. (The MP50 in this setup does
+> not output EEG, so the EEG trace is a generated demo signal.)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+---
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Getting started
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-## Dependency Management
-
-### SciChart.js Community License
-
-This project uses the Community Edition of SciChart.js. It's important to be aware of its licensing terms:
-
--   **6-Month Expiration:** Each version of the SciChart.js Community Edition has a built-in 6-month expiration date. After this period, the charts will display a license error and will no longer function.
--   **Non-Commercial Use:** The community license is strictly for non-commercial, educational, or open-source projects.
--   **Watermark:** The charts will display a SciChart watermark.
-
-To ensure the dashboard continues to function, you **must** update the SciChart.js dependency at least every 6 months.
-
-### Updating SciChart.js
-
-To update SciChart.js to the latest version, follow these steps:
-
-1.  Navigate to the `vscc-dashboard-client` directory:
-    ```bash
-    cd vscc-dashboard-client
-    ```
-2.  Run the npm update command for scichart:
-    ```bash
-    npm update scichart
-    ```
-    Alternatively, you can install the absolute latest version:
-    ```bash
-    npm install scichart@latest
-    ```
-3.  Install the updated packages:
-    ```bash
-    npm install
-    ```
-4.  After updating, it's a good idea to run the development server to ensure everything is working correctly:
-    ```bash
-    npm run dev
-    ```
-
-### Backend Dependencies (EMQX, TimescaleDB)
-
-The backend services running in Docker (like EMQX and TimescaleDB) can be updated by running the `update.sh` script in the `vscc-mqtt-server` directory:
+**Prerequisites:** Node.js 20+ and npm.
 
 ```bash
-cd ../vscc-mqtt-server
-sudo ./update.sh
+npm install        # install dependencies
+npm run dev        # Vite dev server with HMR (binds --host for LAN access)
 ```
+
+The dashboard defaults to the MQTT broker at `ws://192.168.1.188:8083/mqtt`. Open
+**Configure Data Source** in the sidebar to point it at your broker, switch providers
+(MQTT / URL / WebSocket / File Upload), and map each waveform to its topic or file.
+
+### Scripts
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Vite dev server with hot reload |
+| `npm run build` | Type-check (`tsc -b`) + production build — **the authoritative CI gate** |
+| `npm run lint` | ESLint with type-aware rules |
+| `npm run test` | Vitest unit tests |
+| `npm run preview` | Serve the production build locally |
+
+---
+
+## Data sources
+
+| Provider | How it works |
+| --- | --- |
+| **MQTT Broker** | Subscribes to per-channel topics (e.g. `mp50/VitalSigns`, `mp50/HF-PLETH`) over WebSocket. High-frequency channels are buffered and flushed in batches. |
+| **URL (Polling)** | Periodically fetches a JSON export (e.g. `DataExportVSC.json`) over HTTP. |
+| **WebSocket** | Direct WS stream (reserved/experimental). |
+| **File Upload** | Replays recorded exports — JSON numerics and chunk-streamed `*WaveExport.csv` waveform files — entirely in the browser. |
+
+Each channel is mapped independently, so you can mix sources (e.g. live MQTT vitals while replaying a recorded waveform).
+
+---
+
+## Architecture
+
+| File | Responsibility |
+| --- | --- |
+| `src/data/DashboardContext.tsx` | Central state (`useReducer` + Context); default endpoints, channel mappings, toggles |
+| `src/data/constants.ts` | `PHYSIO_META` — metadata (label, unit, group, color) for every physiological ID |
+| `src/components/Sidebar.tsx` | Data-source controls, channel selection, MQTT/upload connection lifecycle |
+| `src/components/DataSourceModal.tsx` | Provider + per-channel topic/file mapping UI |
+| `src/components/AppLayout.tsx` | Layout and chart grouping |
+| `src/components/ChartContainer.tsx` | Primary waveform rendering (gold-standard SciChart lifecycle) |
+| `src/components/AdvancedCharts.tsx` | Raw Pleth / Respiration waveform charts |
+| `src/hooks/useSciChart.ts` | SciChart surface lifecycle hook |
+| `src/utils/dataParser.ts` | JSON export → `TelemetryRecord[]` parsing |
+
+**Stack:** React 19 · TypeScript 5.9 · Vite 7 · SciChart.js 5 · MUI 7 · mqtt.js 5.
+
+---
+
+## ⚠️ The imperative chart boundary
+
+`ChartContainer.tsx`, `AdvancedCharts.tsx`, and `useSciChart.ts` form an **imperative WebGL boundary**
+and are intentionally exempt from some React/ESLint rules. When working in these files:
+
+- **Do not** put chart data in `useState` or add chart variables to `useEffect` dependency arrays.
+- **Do not** remove the intentional ESLint overrides (`react-hooks/exhaustive-deps`, `react-hooks/purity`,
+  `@typescript-eslint/no-floating-promises`) — they protect the chart lifecycle.
+- **Do not** enable React `StrictMode` — SciChart WebGL contexts are limited (~8–16 per browser) and
+  double-mounting destroys the app.
+- **Do** use `appendRange()` for streaming, set `fifoCapacity` on real-time series, and normalize the
+  X-axis to Unix epoch **seconds** (`Date.getTime() / 1000`).
+
+---
+
+## SciChart license
+
+SciChart Community Edition expires every **6 months** and charts will show a license error after expiry. Refresh with:
+
+```bash
+npm install scichart@latest && npm install
+```
+
+---
+
+## PHI awareness
+
+This system processes medical telemetry that may be HIPAA/HITRUST classified. **Do not** add
+`console.log()` statements that emit patient data or raw physiological payloads.
