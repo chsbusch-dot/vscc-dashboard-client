@@ -77,7 +77,7 @@ const AppLayout = () => {
             >
                 <Toolbar>
                     <Typography variant="h6" noWrap component="div">
-                        VSCapture Visualizer
+                        VSCC Studio
                     </Typography>
                     <Chip
                         label={state.dataSource || 'None'}

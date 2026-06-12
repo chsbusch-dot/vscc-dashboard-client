@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDuration, formatBytes } from './sessionFormat';
+import { formatDuration, formatBytes, signalDisplayLabel } from './sessionFormat';
 
 describe('formatDuration', () => {
     it('formats sub-minute durations as seconds', () => {
@@ -46,5 +46,22 @@ describe('formatBytes', () => {
     it('returns -- for invalid input', () => {
         expect(formatBytes(-1)).toBe('--');
         expect(formatBytes(Number.NaN)).toBe('--');
+    });
+});
+
+describe('signalDisplayLabel', () => {
+    it('maps known numeric physio ids to their friendly names', () => {
+        expect(signalDisplayLabel('NOM_ECG_CARD_BEAT_RATE')).toBe('MMS ECG HR');
+        expect(signalDisplayLabel('NOM_PULS_OXIM_SAT_O2')).toBe('MMS SpO2');
+    });
+
+    it('maps known waveform physio ids to their friendly names', () => {
+        expect(signalDisplayLabel('NOM_PLETH_WAVE_A')).toBe('MMS PLETH Wave');
+        expect(signalDisplayLabel('NOM_EEG_ELEC_POTL_CRTX')).toBe('MMS EEG Wave');
+    });
+
+    it('falls back to the raw id for unknown signals', () => {
+        expect(signalDisplayLabel('NOM_SOME_FUTURE_SIGNAL')).toBe('NOM_SOME_FUTURE_SIGNAL');
+        expect(signalDisplayLabel('')).toBe('');
     });
 });

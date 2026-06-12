@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Alert,
     Box,
@@ -19,26 +19,34 @@ import {
     Tooltip,
     Typography,
 } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useDashboard, type TelemetryRecord } from '../data/DashboardContext';
 import type { PhysioId } from '../data/constants';
 import {
+    createSession,
     deleteSession,
     exportSession,
     fetchSessionData,
     fetchSessions,
+    fetchSessionSignals,
     patchSession,
+    sessionDownloadUrl,
     type SessionInfo,
+    type SessionSignals,
 } from '../data/sessionsApi';
-import { formatDuration } from '../utils/sessionFormat';
+import { formatDuration, signalDisplayLabel } from '../utils/sessionFormat';
 import { formatFullTime, type TimeDisplayMode } from '../utils/timeFormat';
 
 const LIST_POLL_INTERVAL_MS = 10000;
 const LOAD_CHUNK_SIZE = 5000;
+/** Signal legends of recording sessions are re-fetched at most this often. */
+const SIGNALS_REFRESH_MS = 30000;
 
 const errorMessage = (err: unknown): string =>
     err instanceof Error ? err.message : 'Unknown error';
@@ -55,20 +63,27 @@ interface SessionRowProps {
     timeDisplay: TimeDisplayMode;
     busy: boolean;
     anyBusy: boolean;
+    /** undefined = not fetched yet, null = fetch failed; both render no legend */
+    signals: SessionSignals | null | undefined;
     onLoad: (session: SessionInfo) => void;
     onExport: (session: SessionInfo) => void;
+    onDownload: (session: SessionInfo) => void;
     onDeleteRequest: (session: SessionInfo) => void;
     onPatched: (updated: SessionInfo) => void;
     onError: (message: string) => void;
 }
+
+const signalChipSx = { height: 20, fontSize: '0.6875rem' } as const;
 
 const SessionRow: React.FC<SessionRowProps> = ({
     session,
     timeDisplay,
     busy,
     anyBusy,
+    signals,
     onLoad,
     onExport,
+    onDownload,
     onDeleteRequest,
     onPatched,
     onError,
@@ -190,6 +205,18 @@ const SessionRow: React.FC<SessionRowProps> = ({
                             </IconButton>
                         </span>
                     </Tooltip>
+                    <Tooltip title="Download zip (full data package)">
+                        <span>
+                            <IconButton
+                                size="small"
+                                aria-label={`Download session ${session.id} zip`}
+                                disabled={anyBusy}
+                                onClick={() => onDownload(session)}
+                            >
+                                <SaveAltIcon fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
                     <Tooltip title="Delete session and its data">
                         <span>
                             <IconButton
@@ -205,6 +232,24 @@ const SessionRow: React.FC<SessionRowProps> = ({
                     </Tooltip>
                 </Stack>
             </Stack>
+            {signals != null && (
+                signals.numerics.length === 0 && signals.waveforms.length === 0 ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                        no data yet
+                    </Typography>
+                ) : (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.75 }}>
+                        {signals.numerics.map(id => (
+                            <Chip key={`n-${id}`} label={signalDisplayLabel(id)} size="small" sx={signalChipSx} />
+                        ))}
+                        {signals.waveforms.map(id => (
+                            <Tooltip key={`w-${id}`} title={`${signalDisplayLabel(id)} (wave)`}>
+                                <Chip label={signalDisplayLabel(id)} size="small" variant="outlined" sx={signalChipSx} />
+                            </Tooltip>
+                        ))}
+                    </Box>
+                )
+            )}
             <Divider sx={{ mt: 1.5 }} />
         </Box>
     );
@@ -217,15 +262,24 @@ interface SessionsDrawerProps {
     onClose: () => void;
 }
 
+interface SignalsCacheEntry {
+    /** null when the fetch failed (renders no legend, retried after the refresh window) */
+    signals: SessionSignals | null;
+    fetchedAt: number;
+}
+
 const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
     const { state, actions, stopStreamsRef } = useDashboard();
     const [sessions, setSessions] = useState<SessionInfo[]>([]);
     const [listLoading, setListLoading] = useState(false);
     const [listError, setListError] = useState<string | null>(null);
     const [busySessionId, setBusySessionId] = useState<number | null>(null);
+    const [creatingSession, setCreatingSession] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState<SessionInfo | null>(null);
     const [snack, setSnack] = useState<SnackState | null>(null);
     const [snackOpen, setSnackOpen] = useState(false);
+    const [signalsCache, setSignalsCache] = useState<Record<number, SignalsCacheEntry>>({});
+    const signalsInFlight = useRef<Set<number>>(new Set());
 
     const showSnack = useCallback((next: SnackState) => {
         setSnack(next);
@@ -252,6 +306,34 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
         const intervalId = window.setInterval(() => { void refresh(); }, LIST_POLL_INTERVAL_MS);
         return () => window.clearInterval(intervalId);
     }, [open, refresh]);
+
+    // Lazily fetch each visible session's signal legend, caching per session id.
+    // Recording sessions (and failed fetches) are re-fetched on a poll tick at
+    // most every SIGNALS_REFRESH_MS; closed sessions are fetched once.
+    useEffect(() => {
+        if (!open) return;
+        const now = Date.now();
+        for (const session of sessions) {
+            const entry = signalsCache[session.id];
+            const stale =
+                entry !== undefined &&
+                (session.recording || entry.signals === null) &&
+                now - entry.fetchedAt >= SIGNALS_REFRESH_MS;
+            if ((entry !== undefined && !stale) || signalsInFlight.current.has(session.id)) continue;
+            signalsInFlight.current.add(session.id);
+            fetchSessionSignals(session.id)
+                .then(signals => {
+                    setSignalsCache(prev => ({ ...prev, [session.id]: { signals, fetchedAt: Date.now() } }));
+                })
+                .catch(() => {
+                    // Quietly skip the legend; retried after the refresh window
+                    setSignalsCache(prev => ({ ...prev, [session.id]: { signals: null, fetchedAt: Date.now() } }));
+                })
+                .finally(() => {
+                    signalsInFlight.current.delete(session.id);
+                });
+        }
+    }, [open, sessions, signalsCache]);
 
     const handlePatched = useCallback((updated: SessionInfo) => {
         setSessions(prev => prev.map(s => (s.id === updated.id ? updated : s)));
@@ -322,6 +404,35 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
         }
     };
 
+    // Native browser download — packages can be several GB, so never fetch/blob.
+    // A temporary anchor lets the browser stream straight to disk; the server's
+    // Content-Disposition header supplies the filename.
+    const handleDownload = (session: SessionInfo) => {
+        const anchor = document.createElement('a');
+        anchor.href = sessionDownloadUrl(session.id);
+        anchor.download = '';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        showSnack({
+            severity: 'info',
+            message: 'Preparing download — the save dialog appears when the server starts streaming',
+        });
+    };
+
+    const handleNewSession = async () => {
+        setCreatingSession(true);
+        try {
+            const created = await createSession();
+            showSnack({ severity: 'success', message: `Recording into session #${created.id}` });
+            await refresh();
+        } catch (err) {
+            showSnack({ severity: 'error', message: `Could not start a new session: ${errorMessage(err)}` });
+        } finally {
+            setCreatingSession(false);
+        }
+    };
+
     const handleDeleteConfirmed = async () => {
         const session = confirmDelete;
         setConfirmDelete(null);
@@ -368,6 +479,19 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
                         </IconButton>
                     </Stack>
 
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<AddIcon />}
+                            disabled={creatingSession}
+                            onClick={() => { void handleNewSession(); }}
+                        >
+                            New session
+                        </Button>
+                        {creatingSession && <CircularProgress size={16} />}
+                    </Stack>
+
                     {listError && <Alert severity="error" sx={{ mb: 1 }}>{listError}</Alert>}
 
                     <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
@@ -383,8 +507,10 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
                                     timeDisplay={state.timeDisplay}
                                     busy={busySessionId === session.id}
                                     anyBusy={busySessionId !== null}
+                                    signals={signalsCache[session.id]?.signals}
                                     onLoad={(s) => { void handleLoad(s); }}
                                     onExport={(s) => { void handleExport(s); }}
+                                    onDownload={handleDownload}
                                     onDeleteRequest={setConfirmDelete}
                                     onPatched={handlePatched}
                                     onError={(message) => showSnack({ severity: 'error', message })}

@@ -2,6 +2,18 @@
  * Small pure formatting helpers for the Sessions and Settings features.
  */
 
+import { PHYSIO_META } from '../data/constants';
+
+// Widened view of PHYSIO_META so arbitrary backend physio_id strings can be looked up.
+const SIGNAL_META: Record<string, { name?: string } | undefined> = PHYSIO_META;
+
+/**
+ * Maps a backend physio_id to its friendly display name from PHYSIO_META,
+ * falling back to the raw id for signals we have no metadata for.
+ */
+export const signalDisplayLabel = (physioId: string): string =>
+    SIGNAL_META[physioId]?.name ?? physioId;
+
 /**
  * Formats a duration given in seconds as a compact human string,
  * e.g. 42 -> "42s", 330 -> "5m 30s", 11100 -> "3h 05m".

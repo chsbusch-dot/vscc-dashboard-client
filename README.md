@@ -1,4 +1,7 @@
-# MP50 Vital Sign Dashboard
+# VSCC Studio
+
+The web frontend of **VSCC** (*VitalSignsCapture + Charts*) — live charting,
+session recording, and data export for patient-monitor telemetry.
 
 > [!WARNING]
 > **Research and education use only — not a medical device.**

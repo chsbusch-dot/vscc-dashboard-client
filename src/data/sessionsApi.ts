@@ -65,6 +65,13 @@ export interface PutSettingsResult {
     session_gap_minutes?: number;
 }
 
+export interface SessionSignals {
+    /** physio_ids with numeric (trend) data in the session */
+    numerics: string[];
+    /** physio_ids with waveform data in the session */
+    waveforms: string[];
+}
+
 // --- Fetch helpers ---
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -89,6 +96,28 @@ const jsonInit = (method: string, payload: unknown): RequestInit => ({
 
 /** GET /api/sessions — newest first. */
 export const fetchSessions = (): Promise<SessionInfo[]> => request<SessionInfo[]>('/api/sessions');
+
+/**
+ * POST /api/sessions — closes any open recording session and creates + returns
+ * a new recording one (the backend moves the session boundary).
+ */
+export const createSession = (label?: string): Promise<SessionInfo> =>
+    request<SessionInfo>(
+        '/api/sessions',
+        label === undefined ? { method: 'POST' } : jsonInit('POST', { label })
+    );
+
+/** GET /api/sessions/{id}/signals — physio_id lists present in the session. */
+export const fetchSessionSignals = (id: number): Promise<SessionSignals> =>
+    request<SessionSignals>(`/api/sessions/${id}/signals`);
+
+/**
+ * URL of GET /api/sessions/{id}/download (streaming zip, Content-Disposition
+ * set by the server). Packages can be several GB, so navigate the browser to
+ * this URL for a native download — never fetch it into memory.
+ */
+export const sessionDownloadUrl = (id: number): string =>
+    `${API_BASE}/api/sessions/${id}/download`;
 
 /** PATCH /api/sessions/{id} — returns the updated session. */
 export const patchSession = (
