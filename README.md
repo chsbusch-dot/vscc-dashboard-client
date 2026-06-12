@@ -1,7 +1,16 @@
 # MP50 Vital Sign Dashboard
 
-> ⚠️ **Research and education use only — not a medical device.** This software is not
-> FDA/CE cleared and must not be used for clinical diagnosis, monitoring, or treatment decisions.
+> [!WARNING]
+> **Research and education use only — not a medical device.**
+> This software is not cleared or approved for clinical use and must never be used
+> for patient monitoring, alarming, or any clinical decision-making. A certified
+> monitor remains the source of truth at all times.
+>
+> **Patient data stays local.** Captured telemetry may constitute Protected Health
+> Information (PHI). Never publish it to brokers, dashboards, or endpoints outside
+> your controlled network, and never write physiological values into logs, browser
+> consoles, or third-party telemetry/analytics services. De-identify any recording
+> before sharing it.
 
 Real-time physiological telemetry dashboard for the **Philips MP50** patient monitor.
 Captured waveforms and numerics (ECG, SpO₂, Pleth, Respiration, EEG, NIBP) are streamed
