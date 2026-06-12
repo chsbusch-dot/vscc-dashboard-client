@@ -23,6 +23,7 @@ import ChartContainer from './ChartContainer';
 import AdvancedCharts from './AdvancedCharts';
 import SessionsDrawer from './SessionsDrawer';
 import SettingsDialog from './SettingsDialog';
+import HealthIndicator from './HealthIndicator';
 import RecordingIndicator from './RecordingIndicator';
 import { getZoneLabel } from '../utils/timeFormat';
 
@@ -103,6 +104,7 @@ const AppLayout = () => {
                         {state.replayProgress > 0 && (
                             <LinearProgress variant="determinate" value={state.replayProgress} color="secondary" sx={{ width: '100px', ml: 2, height: 8 }} />
                         )}
+                        <HealthIndicator />
                         <Tooltip title="Chart time display zone (change in Settings)">
                             <Chip
                                 icon={<AccessTimeIcon />}

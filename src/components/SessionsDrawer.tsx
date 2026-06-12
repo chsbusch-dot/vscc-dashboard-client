@@ -24,9 +24,11 @@ import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SessionQualityDialog from './SessionQualityDialog';
+import SessionHrvDialog from './SessionHrvDialog';
 import { useDashboard, type TelemetryRecord } from '../data/DashboardContext';
 import type { PhysioId } from '../data/constants';
 import {
@@ -69,6 +71,7 @@ interface SessionRowProps {
     onLoad: (session: SessionInfo) => void;
     onDownload: (session: SessionInfo) => void;
     onQuality: (session: SessionInfo) => void;
+    onHrv: (session: SessionInfo) => void;
     onDeleteRequest: (session: SessionInfo) => void;
     onPatched: (updated: SessionInfo) => void;
     onError: (message: string) => void;
@@ -85,6 +88,7 @@ const SessionRow: React.FC<SessionRowProps> = ({
     onLoad,
     onDownload,
     onQuality,
+    onHrv,
     onDeleteRequest,
     onPatched,
     onError,
@@ -206,6 +210,18 @@ const SessionRow: React.FC<SessionRowProps> = ({
                             </IconButton>
                         </span>
                     </Tooltip>
+                    <Tooltip title="Heart-rate variability (HRV)">
+                        <span>
+                            <IconButton
+                                size="small"
+                                aria-label={`HRV for session ${session.id}`}
+                                disabled={anyBusy}
+                                onClick={() => onHrv(session)}
+                            >
+                                <MonitorHeartIcon fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
                     <Tooltip title="Download zip (full data package)">
                         <span>
                             <IconButton
@@ -278,6 +294,7 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
     const [creatingSession, setCreatingSession] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState<SessionInfo | null>(null);
     const [qualityFor, setQualityFor] = useState<SessionInfo | null>(null);
+    const [hrvFor, setHrvFor] = useState<SessionInfo | null>(null);
     const [snack, setSnack] = useState<SnackState | null>(null);
     const [snackOpen, setSnackOpen] = useState(false);
     const [signalsCache, setSignalsCache] = useState<Record<number, SignalsCacheEntry>>({});
@@ -513,6 +530,7 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
                                     onLoad={(s) => { void handleLoad(s); }}
                                     onDownload={handleDownload}
                                     onQuality={setQualityFor}
+                                    onHrv={setHrvFor}
                                     onDeleteRequest={setConfirmDelete}
                                     onPatched={handlePatched}
                                     onError={(message) => showSnack({ severity: 'error', message })}
@@ -524,6 +542,7 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
             </Drawer>
 
             <SessionQualityDialog session={qualityFor} onClose={() => setQualityFor(null)} />
+            <SessionHrvDialog session={hrvFor} onClose={() => setHrvFor(null)} />
 
             <Dialog open={confirmDelete !== null} onClose={() => setConfirmDelete(null)}>
                 <DialogTitle>Delete session #{confirmDelete?.id}?</DialogTitle>

@@ -101,6 +101,25 @@ export interface SessionQuality {
     numerics: NumericQuality[];
 }
 
+export interface SourceIntegrity {
+    clock_offset_seconds: number | null;
+    sequence_regressions: number;
+    samples_seen: number;
+    last_seen_age_seconds: number | null;
+}
+
+export interface StatusResponse {
+    capture_state: 'live' | 'stalled' | 'offline' | 'no_data';
+    last_data_age_seconds: number | null;
+    db_lag_seconds: number | null;
+    db_size_bytes: number | null;
+    worker_uptime_seconds: number | null;
+    buffer_backlog: { numerics: number; waveforms: number };
+    inserted_total: { patient_numerics: number; patient_waveforms: number };
+    sources: Record<string, SourceIntegrity>;
+    thresholds: { stall_s: number; offline_s: number };
+}
+
 export interface CaptureConfig {
     /** empty string = the capture container's MONITOR_IP environment default */
     monitor_ip: string;
@@ -210,6 +229,40 @@ export const putSettings = (
 /** GET /api/sessions/{id}/quality — per-waveform loss statistics + numeric counts. */
 export const fetchSessionQuality = (id: number): Promise<SessionQuality> =>
     request<SessionQuality>(`/api/sessions/${id}/quality`);
+
+/** GET /api/status — worker/capture health snapshot. */
+export const fetchStatus = (): Promise<StatusResponse> => request<StatusResponse>('/api/status');
+
+export interface HrvMetrics {
+    beats: number;
+    insufficient: boolean;
+    mean_hr_bpm?: number;
+    mean_rr_ms?: number;
+    sdnn_ms?: number;
+    rmssd_ms?: number | null;
+    pnn50_pct?: number | null;
+    sd1_ms?: number | null;
+    sd2_ms?: number | null;
+}
+
+export interface HrvResponse {
+    session: SessionInfo;
+    physio_id?: string;
+    samples?: number;
+    ok?: boolean;
+    error?: string;
+    fs_hz?: number;
+    r_peaks?: number;
+    rr_accepted?: number;
+    rr_rejected?: number;
+    hrv?: HrvMetrics;
+    /** (RR[n], RR[n+1]) pairs in ms */
+    poincare?: [number, number][];
+}
+
+/** GET /api/sessions/{id}/hrv — HRV metrics + Poincaré from the session's ECG. */
+export const fetchSessionHrv = (id: number): Promise<HrvResponse> =>
+    request<HrvResponse>(`/api/sessions/${id}/hrv`);
 
 /**
  * URL of GET /api/sessions/{id}/edf — waveforms as EDF, regenerated on every
