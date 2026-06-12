@@ -22,7 +22,7 @@ import { useDashboard, type TelemetryRecord, type ProviderId, type WaveformId } 
 import { PHYSIO_META, type PhysioId } from '../data/constants';
 import { getClinicalColor } from '../utils/colors';
 import { DataSourceModal } from './DataSourceModal';
-import { processRawData } from '../utils/dataParser';
+import { isMqttTelemetryMessage, processRawData } from '../utils/dataParser';
 
 const StyledButton = styled(Button)(({ theme, color }) => ({
     ...(color === 'error' && { backgroundColor: theme.palette.error.main, color: theme.palette.error.contrastText, '&:hover': { backgroundColor: theme.palette.error.dark } }),
@@ -320,18 +320,19 @@ const Sidebar = () => {
     const handleMqttMessage = (topic: string, payload: Buffer) => {
         if (statusRef.current === 'Paused') return;
         try {
-            const message = JSON.parse(payload.toString());
+            const message: unknown = JSON.parse(payload.toString());
+            if (!isMqttTelemetryMessage(message)) return;
             const { time, physio_id, value, device_id } = message;
-            if (typeof time !== 'number' || !physio_id || value === undefined) return;
-            
+            if (!physio_id) return;
+
             const mappedId = (Object.keys(mappingsRef.current) as WaveformId[]).find(
                 id => mappingsRef.current[id].mappings.mqtt === topic
             );
-            
+
             // Drop incoming payload entirely if globally toggled off
             if (!mappedId || !togglesRef.current[mappedId]) return;
 
-            const record: TelemetryRecord = { time, physio_id, value, device_id: device_id || 'mp50' };
+            const record: TelemetryRecord = { time, physio_id: physio_id as PhysioId, value, device_id: device_id || 'mp50' };
             
             if (mappingsRef.current[mappedId].isHighFrequency) {
                 if (!hfDataBuffer.current[topic]) hfDataBuffer.current[topic] = [];
@@ -430,11 +431,11 @@ const Sidebar = () => {
             <Box sx={{ flexShrink: 0 }}>
                 <Typography variant="h6" gutterBottom>Controls</Typography>
                 <Typography gutterBottom>Time Interval (min): {state.timeWindow}</Typography>
-                <Slider value={state.timeWindow} onChange={(_, value) => actions.setTimeWindow(value as number)} aria-labelledby="time-window-slider" valueLabelDisplay="auto" step={5} min={5} max={60} />
+                <Slider value={state.timeWindow} onChange={(_, value) => actions.setTimeWindow(value)} aria-labelledby="time-window-slider" valueLabelDisplay="auto" step={5} min={5} max={60} />
                 <FormControlLabel control={<Checkbox checked={state.autoScroll} onChange={(e) => actions.setAutoScroll(e.target.checked)} />} label="Auto-Scroll (Follow Live Data)" />
                 <FormControl fullWidth sx={{ mt: 2 }}>
                     <Typography gutterBottom>Aggregation</Typography>
-                    <Slider value={state.aggregation === 'raw' ? 0 : state.aggregation === '1min' ? 1 : 2} onChange={(_, value) => actions.setAggregation({ 0: 'raw', 1: '1min', 2: '5min' }[value as 0 | 1 | 2] as any)} step={null} marks={[{ value: 0, label: 'RT' }, { value: 1, label: '1m' }, { value: 2, label: '5m' }]} min={0} max={2} />
+                    <Slider value={state.aggregation === 'raw' ? 0 : state.aggregation === '1min' ? 1 : 2} onChange={(_, value) => actions.setAggregation(({ 0: 'raw', 1: '1min', 2: '5min' } as const)[value as 0 | 1 | 2])} step={null} marks={[{ value: 0, label: 'RT' }, { value: 1, label: '1m' }, { value: 2, label: '5m' }]} min={0} max={2} />
                 </FormControl>
             </Box>
 
@@ -442,7 +443,7 @@ const Sidebar = () => {
 
             {/* SECTION 4: Chart & Data Type Selectors (RESTORED) */}
             <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
-                 <ToggleButtonGroup value={activeTab} exclusive onChange={(_, v) => v && setActiveTab(v)} fullWidth size="small" sx={{ mb: 2, flexShrink: 0 }}>
+                 <ToggleButtonGroup value={activeTab} exclusive onChange={(_, v: 'basic' | 'advanced' | null) => v && setActiveTab(v)} fullWidth size="small" sx={{ mb: 2, flexShrink: 0 }}>
                     <ToggleButton value="basic">Basic Vitals</ToggleButton>
                     <ToggleButton value="advanced">Advanced Charts</ToggleButton>
                 </ToggleButtonGroup>
