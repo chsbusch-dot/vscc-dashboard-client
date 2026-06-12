@@ -23,8 +23,10 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import SessionQualityDialog from './SessionQualityDialog';
 import { useDashboard, type TelemetryRecord } from '../data/DashboardContext';
 import type { PhysioId } from '../data/constants';
 import {
@@ -66,6 +68,7 @@ interface SessionRowProps {
     signals: SessionSignals | null | undefined;
     onLoad: (session: SessionInfo) => void;
     onDownload: (session: SessionInfo) => void;
+    onQuality: (session: SessionInfo) => void;
     onDeleteRequest: (session: SessionInfo) => void;
     onPatched: (updated: SessionInfo) => void;
     onError: (message: string) => void;
@@ -81,6 +84,7 @@ const SessionRow: React.FC<SessionRowProps> = ({
     signals,
     onLoad,
     onDownload,
+    onQuality,
     onDeleteRequest,
     onPatched,
     onError,
@@ -190,6 +194,18 @@ const SessionRow: React.FC<SessionRowProps> = ({
                             </IconButton>
                         </span>
                     </Tooltip>
+                    <Tooltip title="Loss statistics & EDF export">
+                        <span>
+                            <IconButton
+                                size="small"
+                                aria-label={`Quality stats for session ${session.id}`}
+                                disabled={anyBusy}
+                                onClick={() => onQuality(session)}
+                            >
+                                <QueryStatsIcon fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
                     <Tooltip title="Download zip (full data package)">
                         <span>
                             <IconButton
@@ -261,6 +277,7 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
     const [busySessionId, setBusySessionId] = useState<number | null>(null);
     const [creatingSession, setCreatingSession] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState<SessionInfo | null>(null);
+    const [qualityFor, setQualityFor] = useState<SessionInfo | null>(null);
     const [snack, setSnack] = useState<SnackState | null>(null);
     const [snackOpen, setSnackOpen] = useState(false);
     const [signalsCache, setSignalsCache] = useState<Record<number, SignalsCacheEntry>>({});
@@ -495,6 +512,7 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
                                     signals={signalsCache[session.id]?.signals}
                                     onLoad={(s) => { void handleLoad(s); }}
                                     onDownload={handleDownload}
+                                    onQuality={setQualityFor}
                                     onDeleteRequest={setConfirmDelete}
                                     onPatched={handlePatched}
                                     onError={(message) => showSnack({ severity: 'error', message })}
@@ -504,6 +522,8 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
                     </Box>
                 </Box>
             </Drawer>
+
+            <SessionQualityDialog session={qualityFor} onClose={() => setQualityFor(null)} />
 
             <Dialog open={confirmDelete !== null} onClose={() => setConfirmDelete(null)}>
                 <DialogTitle>Delete session #{confirmDelete?.id}?</DialogTitle>
