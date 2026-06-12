@@ -7,9 +7,12 @@ Real-time physiological telemetry dashboard for the **Philips MP50** patient mon
 Captured waveforms and numerics (ECG, SpO₂, Pleth, Respiration, EEG, NIBP) are streamed
 into a React + [SciChart.js](https://www.scichart.com/) WebGL canvas and rendered at 60 FPS.
 
-This is the **frontend** of the [VSCapture-Charts](https://github.com/chsbusch-dot/vscc-dashboard-client)
-system. It consumes data published by the .NET capture service and Python MQTT/TimescaleDB
-backend (see the `vscc-mqtt-server` repository).
+This is the **frontend**. It pairs with the
+[vscc-mqtt-server](https://github.com/chsbusch-dot/vscc-mqtt-server) backend — an
+MQTT (EMQX) + TimescaleDB stack built around
+[VSCapture](https://sourceforge.net/projects/vscapture/files/), the open-source
+patient-monitor capture tool by John George K. The backend's installer downloads
+the latest VSCapture automatically; no separate setup is needed.
 
 ![MP50 Vital Sign Dashboard](docs/screenshots/dashboard-full.png)
 
