@@ -101,6 +101,25 @@ export interface SessionQuality {
     numerics: NumericQuality[];
 }
 
+export interface SourceIntegrity {
+    clock_offset_seconds: number | null;
+    sequence_regressions: number;
+    samples_seen: number;
+    last_seen_age_seconds: number | null;
+}
+
+export interface StatusResponse {
+    capture_state: 'live' | 'stalled' | 'offline' | 'no_data';
+    last_data_age_seconds: number | null;
+    db_lag_seconds: number | null;
+    db_size_bytes: number | null;
+    worker_uptime_seconds: number | null;
+    buffer_backlog: { numerics: number; waveforms: number };
+    inserted_total: { patient_numerics: number; patient_waveforms: number };
+    sources: Record<string, SourceIntegrity>;
+    thresholds: { stall_s: number; offline_s: number };
+}
+
 export interface CaptureConfig {
     /** empty string = the capture container's MONITOR_IP environment default */
     monitor_ip: string;
@@ -210,6 +229,67 @@ export const putSettings = (
 /** GET /api/sessions/{id}/quality — per-waveform loss statistics + numeric counts. */
 export const fetchSessionQuality = (id: number): Promise<SessionQuality> =>
     request<SessionQuality>(`/api/sessions/${id}/quality`);
+
+/** GET /api/status — worker/capture health snapshot. */
+export const fetchStatus = (): Promise<StatusResponse> => request<StatusResponse>('/api/status');
+
+export interface HrvMetrics {
+    beats: number;
+    insufficient: boolean;
+    mean_hr_bpm?: number;
+    mean_rr_ms?: number;
+    sdnn_ms?: number;
+    rmssd_ms?: number | null;
+    pnn50_pct?: number | null;
+    sd1_ms?: number | null;
+    sd2_ms?: number | null;
+}
+
+export interface HrvResponse {
+    session: SessionInfo;
+    physio_id?: string;
+    samples?: number;
+    ok?: boolean;
+    error?: string;
+    fs_hz?: number;
+    r_peaks?: number;
+    rr_accepted?: number;
+    rr_rejected?: number;
+    hrv?: HrvMetrics;
+    /** (RR[n], RR[n+1]) pairs in ms */
+    poincare?: [number, number][];
+}
+
+/** GET /api/sessions/{id}/hrv — HRV metrics + Poincaré from the session's ECG. */
+export const fetchSessionHrv = (id: number): Promise<HrvResponse> =>
+    request<HrvResponse>(`/api/sessions/${id}/hrv`);
+
+export interface Annotation {
+    id: number;
+    /** epoch seconds */
+    time: number;
+    label: string;
+    session_id: number | null;
+}
+
+/** POST /api/annotations — add an event marker (time defaults to now on the server). */
+export const createAnnotation = (
+    payload: { label: string; time?: number; session_id?: number | null }
+): Promise<Annotation> => request<Annotation>('/api/annotations', jsonInit('POST', payload));
+
+/** GET /api/annotations — newest first; optional session/time filters. */
+export const fetchAnnotations = (params?: { session_id?: number; from_ts?: number; to_ts?: number }): Promise<Annotation[]> => {
+    const q = new URLSearchParams();
+    if (params?.session_id != null) q.set('session_id', String(params.session_id));
+    if (params?.from_ts != null) q.set('from_ts', String(params.from_ts));
+    if (params?.to_ts != null) q.set('to_ts', String(params.to_ts));
+    const qs = q.toString();
+    return request<Annotation[]>(`/api/annotations${qs ? `?${qs}` : ''}`);
+};
+
+/** DELETE /api/annotations/{id} */
+export const deleteAnnotation = (id: number): Promise<{ ok: boolean }> =>
+    request<{ ok: boolean }>(`/api/annotations/${id}`, { method: 'DELETE' });
 
 /**
  * URL of GET /api/sessions/{id}/edf — waveforms as EDF, regenerated on every

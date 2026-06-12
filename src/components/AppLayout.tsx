@@ -15,6 +15,7 @@ import {
 import HistoryIcon from '@mui/icons-material/History';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import BookmarkAddIcon from '@mui/icons-material/BookmarkAdd';
 import { SciChartVerticalGroup } from 'scichart';
 import Sidebar from './Sidebar';
 import { useDashboard } from '../data/DashboardContext';
@@ -23,6 +24,8 @@ import ChartContainer from './ChartContainer';
 import AdvancedCharts from './AdvancedCharts';
 import SessionsDrawer from './SessionsDrawer';
 import SettingsDialog from './SettingsDialog';
+import HealthIndicator from './HealthIndicator';
+import AnnotationsDialog from './AnnotationsDialog';
 import RecordingIndicator from './RecordingIndicator';
 import { getZoneLabel } from '../utils/timeFormat';
 
@@ -34,6 +37,7 @@ const AppLayout = () => {
     const { state } = useDashboard();
     const [sessionsOpen, setSessionsOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [annotationsOpen, setAnnotationsOpen] = useState(false);
 
     const zoneLabel = useMemo(() => getZoneLabel(state.timeDisplay), [state.timeDisplay]);
 
@@ -103,6 +107,7 @@ const AppLayout = () => {
                         {state.replayProgress > 0 && (
                             <LinearProgress variant="determinate" value={state.replayProgress} color="secondary" sx={{ width: '100px', ml: 2, height: 8 }} />
                         )}
+                        <HealthIndicator />
                         <Tooltip title="Chart time display zone (change in Settings)">
                             <Chip
                                 icon={<AccessTimeIcon />}
@@ -111,6 +116,11 @@ const AppLayout = () => {
                                 variant="outlined"
                                 sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)', '& .MuiChip-icon': { color: 'inherit' } }}
                             />
+                        </Tooltip>
+                        <Tooltip title="Mark an event (annotation)">
+                            <IconButton color="inherit" aria-label="Mark event" onClick={() => setAnnotationsOpen(true)}>
+                                <BookmarkAddIcon />
+                            </IconButton>
                         </Tooltip>
                         <Button
                             color="inherit"
@@ -169,6 +179,7 @@ const AppLayout = () => {
 
             <SessionsDrawer open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
             <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+            <AnnotationsDialog open={annotationsOpen} onClose={() => setAnnotationsOpen(false)} />
         </Box>
     );
 };
