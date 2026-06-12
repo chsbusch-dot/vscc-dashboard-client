@@ -72,6 +72,52 @@ export interface SessionSignals {
     waveforms: string[];
 }
 
+export interface WaveformQuality {
+    physio_id: string;
+    /** nominal capture rate: mode of per-second sample counts */
+    rate_hz: number;
+    samples: number;
+    expected_samples: number;
+    missing_samples: number;
+    /** null when the signal has no measurable span */
+    completeness_pct: number | null;
+    gap_count: number;
+    longest_gap_s: number;
+    /** epoch seconds */
+    first_sample: number;
+    last_sample: number;
+}
+
+export interface NumericQuality {
+    physio_id: string;
+    samples: number;
+    first_sample: number;
+    last_sample: number;
+}
+
+export interface SessionQuality {
+    session: SessionInfo;
+    waveforms: WaveformQuality[];
+    numerics: NumericQuality[];
+}
+
+export interface CaptureConfig {
+    /** empty string = the capture container's MONITOR_IP environment default */
+    monitor_ip: string;
+    /** numerics export interval, seconds: '1' | '10' | '60' | '300' */
+    interval: string;
+    /** VSCapture waveform set, '0'..'12' (12 = all waves) */
+    waveset: string;
+    scale: string;
+    devid: string;
+    config_file?: string;
+}
+
+export interface PutCaptureConfigResult extends Partial<CaptureConfig> {
+    ok: boolean;
+    error?: string;
+}
+
 // --- Fetch helpers ---
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -160,3 +206,27 @@ export const fetchSettings = (): Promise<BackendSettings> => request<BackendSett
 export const putSettings = (
     payload: { retention_hours?: number; session_gap_minutes?: number }
 ): Promise<PutSettingsResult> => request<PutSettingsResult>('/api/settings', jsonInit('PUT', payload));
+
+/** GET /api/sessions/{id}/quality — per-waveform loss statistics + numeric counts. */
+export const fetchSessionQuality = (id: number): Promise<SessionQuality> =>
+    request<SessionQuality>(`/api/sessions/${id}/quality`);
+
+/**
+ * URL of GET /api/sessions/{id}/edf — waveforms as EDF, regenerated on every
+ * call. Navigate the browser to it for a native download (same rule as the
+ * zip downloads: never fetch it into memory).
+ */
+export const sessionEdfUrl = (id: number): string => `${API_BASE}/api/sessions/${id}/edf`;
+
+/** GET /api/capture-config — current VSCapture service settings. */
+export const fetchCaptureConfig = (): Promise<CaptureConfig> =>
+    request<CaptureConfig>('/api/capture-config');
+
+/**
+ * PUT /api/capture-config — persist VSCapture service settings. Applying a
+ * change recycles the capture process; data resumes within ~2 minutes.
+ */
+export const putCaptureConfig = (
+    payload: Partial<Omit<CaptureConfig, 'config_file'>>
+): Promise<PutCaptureConfigResult> =>
+    request<PutCaptureConfigResult>('/api/capture-config', jsonInit('PUT', payload));

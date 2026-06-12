@@ -30,6 +30,17 @@ export const formatDuration = (seconds: number): string => {
 };
 
 /**
+ * Compact sample-count formatting for the quality table,
+ * e.g. 950 -> "950", 343744 -> "344k", 2062528 -> "2.06M".
+ */
+export const formatCount = (count: number): string => {
+    if (!Number.isFinite(count) || count < 0) return '--';
+    if (count < 1000) return String(Math.round(count));
+    if (count < 1_000_000) return `${Math.round(count / 1000)}k`;
+    return `${(count / 1_000_000).toFixed(2)}M`;
+};
+
+/**
  * Pretty-prints a byte count, e.g. 2048 -> "2.0 KB", 5368709120 -> "5.0 GB".
  */
 export const formatBytes = (bytes: number): string => {

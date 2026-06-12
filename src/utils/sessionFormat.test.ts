@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { formatDuration, formatBytes, signalDisplayLabel } from './sessionFormat';
+import { formatCount, formatDuration, formatBytes, signalDisplayLabel } from './sessionFormat';
+
+describe('formatCount', () => {
+    it('keeps small values as-is', () => {
+        expect(formatCount(0)).toBe('0');
+        expect(formatCount(950)).toBe('950');
+    });
+
+    it('abbreviates thousands and millions', () => {
+        expect(formatCount(343744)).toBe('344k');
+        expect(formatCount(2062528)).toBe('2.06M');
+    });
+
+    it('returns -- for invalid input', () => {
+        expect(formatCount(-1)).toBe('--');
+        expect(formatCount(Number.NaN)).toBe('--');
+    });
+});
 
 describe('formatDuration', () => {
     it('formats sub-minute durations as seconds', () => {

@@ -11,6 +11,7 @@ import {
     DialogTitle,
     Divider,
     LinearProgress,
+    MenuItem,
     Stack,
     TextField,
     ToggleButton,
@@ -18,7 +19,14 @@ import {
     Typography,
 } from '@mui/material';
 import { useDashboard } from '../data/DashboardContext';
-import { fetchSettings, putSettings, type BackendSettings } from '../data/sessionsApi';
+import {
+    fetchCaptureConfig,
+    fetchSettings,
+    putCaptureConfig,
+    putSettings,
+    type BackendSettings,
+    type CaptureConfig,
+} from '../data/sessionsApi';
 import { formatBytes } from '../utils/sessionFormat';
 import { getZoneLabel, type TimeDisplayMode } from '../utils/timeFormat';
 
@@ -26,6 +34,21 @@ const errorMessage = (err: unknown): string =>
     err instanceof Error ? err.message : 'Unknown error';
 
 type Feedback = { severity: 'success' | 'error'; message: string } | null;
+
+/** Editable subset of the capture config (config_file is server-side info). */
+type CaptureDraft = Omit<CaptureConfig, 'config_file'>;
+
+const INTERVAL_OPTIONS = [
+    { value: '1', label: '1 s' },
+    { value: '10', label: '10 s' },
+    { value: '60', label: '1 min' },
+    { value: '300', label: '5 min' },
+] as const;
+
+const WAVESET_OPTIONS = Array.from({ length: 13 }, (_, n) => ({
+    value: String(n),
+    label: n === 0 ? '0 — no waveforms' : n === 12 ? '12 — all waveforms' : String(n),
+}));
 
 interface NumberSettingRowProps {
     label: string;
@@ -89,6 +112,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
     const [retentionFeedback, setRetentionFeedback] = useState<Feedback>(null);
     const [gapFeedback, setGapFeedback] = useState<Feedback>(null);
     const [savingField, setSavingField] = useState<'retention_hours' | 'session_gap_minutes' | null>(null);
+    const [captureDraft, setCaptureDraft] = useState<CaptureDraft | null>(null);
+    const [captureError, setCaptureError] = useState<string | null>(null);
+    const [captureFeedback, setCaptureFeedback] = useState<Feedback>(null);
+    const [applyingCapture, setApplyingCapture] = useState(false);
 
     // (Re)load settings each time the dialog opens
     useEffect(() => {
@@ -96,6 +123,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
         let cancelled = false;
         setRetentionFeedback(null);
         setGapFeedback(null);
+        setCaptureFeedback(null);
         const load = async () => {
             try {
                 const loaded = await fetchSettings();
@@ -108,7 +136,24 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                 if (!cancelled) setLoadError(`Could not fetch settings: ${errorMessage(err)}`);
             }
         };
+        const loadCapture = async () => {
+            try {
+                const cfg = await fetchCaptureConfig();
+                if (cancelled) return;
+                setCaptureDraft({
+                    monitor_ip: cfg.monitor_ip,
+                    interval: cfg.interval,
+                    waveset: cfg.waveset,
+                    scale: cfg.scale,
+                    devid: cfg.devid,
+                });
+                setCaptureError(null);
+            } catch (err) {
+                if (!cancelled) setCaptureError(`Capture settings unavailable: ${errorMessage(err)}`);
+            }
+        };
         void load();
+        void loadCapture();
         return () => { cancelled = true; };
     }, [open]);
 
@@ -137,6 +182,33 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
             setSavingField(null);
         }
     };
+
+    const applyCaptureConfig = async () => {
+        if (!captureDraft) return;
+        setApplyingCapture(true);
+        setCaptureFeedback(null);
+        try {
+            const result = await putCaptureConfig(captureDraft);
+            if (result.ok) {
+                setCaptureFeedback({
+                    severity: 'success',
+                    message: 'Applied — the capture restarts now; data resumes within ~2 minutes',
+                });
+            } else {
+                setCaptureFeedback({ severity: 'error', message: result.error ?? 'Apply failed' });
+            }
+        } catch (err) {
+            setCaptureFeedback({ severity: 'error', message: errorMessage(err) });
+        } finally {
+            setApplyingCapture(false);
+        }
+    };
+
+    const setCaptureField = (field: keyof CaptureDraft) =>
+        (event: React.ChangeEvent<HTMLInputElement>) => {
+            const value = event.target.value;
+            setCaptureDraft(prev => (prev ? { ...prev, [field]: value } : prev));
+        };
 
     const usedBytes = settings ? settings.disk.total_bytes - settings.disk.free_bytes : 0;
     const usedPercent = settings && settings.disk.total_bytes > 0
@@ -238,6 +310,104 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                             </Box>
                         </>
                     )}
+
+                    <Divider />
+
+                    {/* Capture service (VSCapture command line) configuration */}
+                    <Box>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>Capture</Typography>
+                        {captureError && (
+                            <Typography variant="caption" color="text.secondary">{captureError}</Typography>
+                        )}
+                        {!captureDraft && !captureError && (
+                            <Stack direction="row" spacing={1} alignItems="center">
+                                <CircularProgress size={18} />
+                                <Typography variant="body2" color="text.secondary">Loading capture settings…</Typography>
+                            </Stack>
+                        )}
+                        {captureDraft && (
+                            <Stack spacing={1.5}>
+                                <Stack direction="row" spacing={1}>
+                                    <TextField
+                                        label="Monitor IP"
+                                        size="small"
+                                        value={captureDraft.monitor_ip}
+                                        onChange={setCaptureField('monitor_ip')}
+                                        placeholder="container default"
+                                        helperText="Leave empty to keep the install-time IP"
+                                        sx={{ flexGrow: 1 }}
+                                        slotProps={{ htmlInput: { 'aria-label': 'Monitor IP' } }}
+                                    />
+                                    <TextField
+                                        label="Device id"
+                                        size="small"
+                                        value={captureDraft.devid}
+                                        onChange={setCaptureField('devid')}
+                                        helperText="Used in file names / topics"
+                                        sx={{ width: 140, flexShrink: 0 }}
+                                        slotProps={{ htmlInput: { 'aria-label': 'Device id' } }}
+                                    />
+                                </Stack>
+                                <Stack direction="row" spacing={1}>
+                                    <TextField
+                                        select
+                                        label="Numerics interval"
+                                        size="small"
+                                        value={captureDraft.interval}
+                                        onChange={setCaptureField('interval')}
+                                        sx={{ flexGrow: 1 }}
+                                    >
+                                        {INTERVAL_OPTIONS.map(opt => (
+                                            <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                                        ))}
+                                    </TextField>
+                                    <TextField
+                                        select
+                                        label="Waveset"
+                                        size="small"
+                                        value={captureDraft.waveset}
+                                        onChange={setCaptureField('waveset')}
+                                        sx={{ flexGrow: 1 }}
+                                    >
+                                        {WAVESET_OPTIONS.map(opt => (
+                                            <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                                        ))}
+                                    </TextField>
+                                    <TextField
+                                        select
+                                        label="Scale"
+                                        size="small"
+                                        value={captureDraft.scale}
+                                        onChange={setCaptureField('scale')}
+                                        sx={{ width: 90, flexShrink: 0 }}
+                                    >
+                                        <MenuItem value="1">1</MenuItem>
+                                        <MenuItem value="2">2</MenuItem>
+                                    </TextField>
+                                </Stack>
+                                <Alert severity="warning" sx={{ py: 0 }}>
+                                    Applying restarts the capture process — data resumes within ~2 minutes
+                                    (the monitor must drop its association first).
+                                </Alert>
+                                <Box>
+                                    <Button
+                                        variant="contained"
+                                        size="small"
+                                        onClick={() => { void applyCaptureConfig(); }}
+                                        disabled={applyingCapture}
+                                        startIcon={applyingCapture ? <CircularProgress size={14} /> : undefined}
+                                    >
+                                        Apply capture settings
+                                    </Button>
+                                </Box>
+                                {captureFeedback && (
+                                    <Alert severity={captureFeedback.severity} sx={{ py: 0 }}>
+                                        {captureFeedback.message}
+                                    </Alert>
+                                )}
+                            </Stack>
+                        )}
+                    </Box>
                 </Stack>
             </DialogContent>
             <DialogActions>
