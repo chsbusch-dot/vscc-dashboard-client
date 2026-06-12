@@ -264,6 +264,33 @@ export interface HrvResponse {
 export const fetchSessionHrv = (id: number): Promise<HrvResponse> =>
     request<HrvResponse>(`/api/sessions/${id}/hrv`);
 
+export interface Annotation {
+    id: number;
+    /** epoch seconds */
+    time: number;
+    label: string;
+    session_id: number | null;
+}
+
+/** POST /api/annotations — add an event marker (time defaults to now on the server). */
+export const createAnnotation = (
+    payload: { label: string; time?: number; session_id?: number | null }
+): Promise<Annotation> => request<Annotation>('/api/annotations', jsonInit('POST', payload));
+
+/** GET /api/annotations — newest first; optional session/time filters. */
+export const fetchAnnotations = (params?: { session_id?: number; from_ts?: number; to_ts?: number }): Promise<Annotation[]> => {
+    const q = new URLSearchParams();
+    if (params?.session_id != null) q.set('session_id', String(params.session_id));
+    if (params?.from_ts != null) q.set('from_ts', String(params.from_ts));
+    if (params?.to_ts != null) q.set('to_ts', String(params.to_ts));
+    const qs = q.toString();
+    return request<Annotation[]>(`/api/annotations${qs ? `?${qs}` : ''}`);
+};
+
+/** DELETE /api/annotations/{id} */
+export const deleteAnnotation = (id: number): Promise<{ ok: boolean }> =>
+    request<{ ok: boolean }>(`/api/annotations/${id}`, { method: 'DELETE' });
+
 /**
  * URL of GET /api/sessions/{id}/edf — waveforms as EDF, regenerated on every
  * call. Navigate the browser to it for a native download (same rule as the
