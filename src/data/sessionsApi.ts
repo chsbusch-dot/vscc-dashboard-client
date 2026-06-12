@@ -119,6 +119,13 @@ export const fetchSessionSignals = (id: number): Promise<SessionSignals> =>
 export const sessionDownloadUrl = (id: number): string =>
     `${API_BASE}/api/sessions/${id}/download`;
 
+/**
+ * URL of GET /api/sessions/download-all — every session's package in one
+ * streamed zip. Same rule as above: navigate, never fetch.
+ */
+export const sessionsDownloadAllUrl = (): string =>
+    `${API_BASE}/api/sessions/download-all`;
+
 /** PATCH /api/sessions/{id} — returns the updated session. */
 export const patchSession = (
     id: number,

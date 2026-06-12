@@ -37,6 +37,7 @@ import {
     fetchSessionSignals,
     patchSession,
     sessionDownloadUrl,
+    sessionsDownloadAllUrl,
     type SessionInfo,
     type SessionSignals,
 } from '../data/sessionsApi';
@@ -407,6 +408,20 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
     // Native browser download — packages can be several GB, so never fetch/blob.
     // A temporary anchor lets the browser stream straight to disk; the server's
     // Content-Disposition header supplies the filename.
+    // Same native-download pattern for the everything-zip.
+    const handleDownloadAll = () => {
+        const anchor = document.createElement('a');
+        anchor.href = sessionsDownloadAllUrl();
+        anchor.download = '';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        showSnack({
+            severity: 'info',
+            message: 'Preparing download of all sessions — the save dialog appears when streaming starts',
+        });
+    };
+
     const handleDownload = (session: SessionInfo) => {
         const anchor = document.createElement('a');
         anchor.href = sessionDownloadUrl(session.id);
@@ -490,6 +505,15 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
                             New session
                         </Button>
                         {creatingSession && <CircularProgress size={16} />}
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<SaveAltIcon />}
+                            disabled={sessions.length === 0}
+                            onClick={handleDownloadAll}
+                        >
+                            Download all
+                        </Button>
                     </Stack>
 
                     {listError && <Alert severity="error" sx={{ mb: 1 }}>{listError}</Alert>}
