@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
     Box,
     AppBar,
@@ -8,13 +8,23 @@ import {
     CircularProgress,
     LinearProgress,
     Chip,
+    Button,
+    IconButton,
+    Tooltip,
 } from '@mui/material';
+import HistoryIcon from '@mui/icons-material/History';
+import SettingsIcon from '@mui/icons-material/Settings';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { SciChartVerticalGroup } from 'scichart';
 import Sidebar from './Sidebar';
 import { useDashboard } from '../data/DashboardContext';
 import { PHYSIO_META } from '../data/constants';
 import ChartContainer from './ChartContainer';
 import AdvancedCharts from './AdvancedCharts';
+import SessionsDrawer from './SessionsDrawer';
+import SettingsDialog from './SettingsDialog';
+import RecordingIndicator from './RecordingIndicator';
+import { getZoneLabel } from '../utils/timeFormat';
 
 const drawerWidth = 300;
 
@@ -22,6 +32,10 @@ const verticalGroup = new SciChartVerticalGroup();
 
 const AppLayout = () => {
     const { state } = useDashboard();
+    const [sessionsOpen, setSessionsOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+
+    const zoneLabel = useMemo(() => getZoneLabel(state.timeDisplay), [state.timeDisplay]);
 
     const chartGroups = useMemo(() => {
         const activePhysioIds = Object.entries(state.selectedPhysioIds)
@@ -65,21 +79,51 @@ const AppLayout = () => {
                     <Typography variant="h6" noWrap component="div">
                         VSCapture Visualizer
                     </Typography>
-                    <Chip 
-                        label={state.dataSource || 'None'} 
-                        size="small" 
+                    <Chip
+                        label={state.dataSource || 'None'}
+                        size="small"
                         color="secondary"
-                        sx={{ ml: 2, textTransform: 'uppercase' }} 
+                        sx={{ ml: 2, textTransform: 'uppercase' }}
                     />
+                    <RecordingIndicator />
                     <Box sx={{ flex: 1 }} />
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         {state.status === 'Loading' && <CircularProgress size={24} color="inherit" />}
+                        {state.statusNote && (
+                            <Chip
+                                label={state.statusNote}
+                                size="small"
+                                variant="outlined"
+                                sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)', maxWidth: 360 }}
+                            />
+                        )}
                         <Typography variant="body1" sx={{ textTransform: 'uppercase' }}>
                             ({getStatusText()})
                         </Typography>
                         {state.replayProgress > 0 && (
                             <LinearProgress variant="determinate" value={state.replayProgress} color="secondary" sx={{ width: '100px', ml: 2, height: 8 }} />
                         )}
+                        <Tooltip title="Chart time display zone (change in Settings)">
+                            <Chip
+                                icon={<AccessTimeIcon />}
+                                label={zoneLabel}
+                                size="small"
+                                variant="outlined"
+                                sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)', '& .MuiChip-icon': { color: 'inherit' } }}
+                            />
+                        </Tooltip>
+                        <Button
+                            color="inherit"
+                            startIcon={<HistoryIcon />}
+                            onClick={() => setSessionsOpen(true)}
+                        >
+                            Sessions
+                        </Button>
+                        <Tooltip title="Settings">
+                            <IconButton color="inherit" aria-label="Open settings" onClick={() => setSettingsOpen(true)}>
+                                <SettingsIcon />
+                            </IconButton>
+                        </Tooltip>
                     </Box>
                 </Toolbar>
             </AppBar>
@@ -122,6 +166,9 @@ const AppLayout = () => {
                     />
                 )}
             </Box>
+
+            <SessionsDrawer open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
+            <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
         </Box>
     );
 };

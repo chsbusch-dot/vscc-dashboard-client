@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useRef, useCallback } from 'react';
 import { PHYSIO_META, type PhysioId } from './constants';
+import { loadTimeDisplay, saveTimeDisplay, type TimeDisplayMode } from '../utils/timeFormat';
 
 // --- Types ---
 
@@ -39,6 +40,10 @@ export interface DashboardState {
     timeWindow: number;
     autoScroll: boolean;
     aggregation: 'raw' | '1min' | '5min';
+    /** How chart axis/cursor and session times are rendered. Formatting only — never shifts data. */
+    timeDisplay: TimeDisplayMode;
+    /** Short informational note shown in the header (e.g. "Loaded session #3"). */
+    statusNote: string | null;
     selectedPhysioIds: Record<PhysioId, boolean>;
     advancedCharts: {
         rawPleth: boolean;
@@ -64,6 +69,8 @@ export interface DashboardActions {
     setTimeWindow: (window: number) => void;
     setAutoScroll: (auto: boolean) => void;
     setAggregation: (agg: DashboardState['aggregation']) => void;
+    setTimeDisplay: (mode: TimeDisplayMode) => void;
+    setStatusNote: (note: string | null) => void;
     togglePhysioId: (id: PhysioId) => void;
     selectAll: () => void;
     deselectAll: () => void;
@@ -77,6 +84,12 @@ interface DashboardContextType {
     actions: DashboardActions;
     dataRef: React.MutableRefObject<Record<string, TimeSeries>>;
     subscribeToData: (callback: (records: TelemetryRecord[] | 'clear') => void) => () => void;
+    /**
+     * Sidebar registers its stream stop handler here so other features
+     * (e.g. loading a stored session) can stop an active live stream
+     * without duplicating connection teardown logic.
+     */
+    stopStreamsRef: React.MutableRefObject<(() => void) | null>;
 }
 
 // Backend host resolution, in priority order:
@@ -84,7 +97,7 @@ interface DashboardContextType {
 //    container runs with -e VSCC_HOST=<backend-ip> (two-host installs, no rebuild)
 // 2. VITE_VSCC_HOST — build-time/dev override (.env.local)
 // 3. the host the dashboard is served from — correct for the single-host install
-const VSCC_HOST: string =
+export const VSCC_HOST: string =
     (typeof window !== 'undefined' && (window as { VSCC_HOST?: string }).VSCC_HOST) ||
     (import.meta.env.VITE_VSCC_HOST as string | undefined) ||
     (typeof window !== 'undefined' ? window.location.hostname : 'localhost');
@@ -128,6 +141,8 @@ const initialState: DashboardState = {
     timeWindow: 1,
     autoScroll: true,
     aggregation: 'raw',
+    timeDisplay: loadTimeDisplay(),
+    statusNote: null,
     selectedPhysioIds: (Object.keys(PHYSIO_META) as PhysioId[]).reduce((acc, key) => {
         acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_PLETH', 'NOM_RESP'].includes(key);
         return acc;
@@ -147,6 +162,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const dataRef = useRef<Record<string, TimeSeries>>({});
     const listenersRef = useRef<Set<(records: TelemetryRecord[] | 'clear') => void>>(new Set());
     const lastRecordUpdateRef = useRef<number>(0);
+    const stopStreamsRef = useRef<(() => void) | null>(null);
 
     const subscribeToData = useCallback((callback: (records: TelemetryRecord[] | 'clear') => void) => {
         listenersRef.current.add(callback);
@@ -175,6 +191,11 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setTimeWindow: (timeWindow) => dispatch({ timeWindow }),
         setAutoScroll: (autoScroll) => dispatch({ autoScroll }),
         setAggregation: (aggregation) => dispatch({ aggregation }),
+        setTimeDisplay: (timeDisplay) => {
+            saveTimeDisplay(timeDisplay);
+            dispatch({ timeDisplay });
+        },
+        setStatusNote: (statusNote) => dispatch({ statusNote }),
         togglePhysioId: (id) => dispatch({ selectedPhysioIds: { ...state.selectedPhysioIds, [id]: !state.selectedPhysioIds[id] } }),
         selectAll: () => {
             const allIds = (Object.keys(PHYSIO_META) as PhysioId[]).reduce((acc, key) => { acc[key] = true; return acc; }, {} as Record<PhysioId, boolean>);
@@ -204,13 +225,13 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         },
         clearData: () => {
             dataRef.current = {};
-            dispatch({ recordCount: 0, replayProgress: 0 });
+            dispatch({ recordCount: 0, replayProgress: 0, statusNote: null });
             listenersRef.current.forEach(listener => listener('clear'));
         }
     };
 
     return (
-        <DashboardContext.Provider value={{ state, actions, dataRef, subscribeToData }}>
+        <DashboardContext.Provider value={{ state, actions, dataRef, subscribeToData, stopStreamsRef }}>
             {children}
         </DashboardContext.Provider>
     );
