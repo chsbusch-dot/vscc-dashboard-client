@@ -13,7 +13,6 @@ export const getClinicalColor = (id: string): string => {
         case 'NOM_ECG_ELEC_POTL_I':
         case 'NOM_ECG_ELEC_POTL_V':
             return '#2ca02c'; // Green (ECG) - Matches NOM_ECG_CARD_BEAT_RATE
-        case 'NOM_PLETH_WAVE_A':
         case 'NOM_PLETH':
             return '#17becf'; // Cyan (SpO2) - Matches NOM_PULS_OXIM_SAT_O2
         case 'NOM_RESP':
