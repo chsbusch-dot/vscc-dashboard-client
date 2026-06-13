@@ -51,6 +51,7 @@ export interface DashboardState {
         ppi: boolean;
         overlay: boolean;
         spectrogram: boolean;
+        anomaly: boolean;
     };
 }
 
@@ -149,7 +150,7 @@ const initialState: DashboardState = {
         acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_PLETH', 'NOM_RESP'].includes(key);
         return acc;
     }, {} as Record<PhysioId, boolean>),
-    advancedCharts: { rawPleth: true, resp: true, ppi: false, overlay: false, spectrogram: false },
+    advancedCharts: { rawPleth: true, resp: true, ppi: false, overlay: false, spectrogram: false, anomaly: false },
 };
 
 const dashboardReducer = (prev: DashboardState, action: Partial<DashboardState>): DashboardState => {

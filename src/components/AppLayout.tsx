@@ -11,6 +11,7 @@ import {
     Button,
     IconButton,
     Tooltip,
+    Paper,
 } from '@mui/material';
 import HistoryIcon from '@mui/icons-material/History';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -28,6 +29,7 @@ import SettingsDialog from './SettingsDialog';
 import HealthIndicator from './HealthIndicator';
 import AnnotationsDialog from './AnnotationsDialog';
 import LayoutsDialog from './LayoutsDialog';
+import AnomalyChart from './AnomalyChart';
 import RecordingIndicator from './RecordingIndicator';
 import { getZoneLabel } from '../utils/timeFormat';
 
@@ -182,6 +184,13 @@ const AppLayout = () => {
                         showOverlay={state.advancedCharts.overlay}
                         showSpectrogram={state.advancedCharts.spectrogram}
                     />
+                )}
+
+                {state.advancedCharts.anomaly && (
+                    <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column', mt: 2 }}>
+                        <Typography variant="subtitle1" gutterBottom>Anomaly Monitor</Typography>
+                        <AnomalyChart />
+                    </Paper>
                 )}
             </Box>
 
