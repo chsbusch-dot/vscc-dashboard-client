@@ -42,10 +42,7 @@ export const PHYSIO_META = {
     //"iTtymp": {"name": "MMS Temp Tympanic", "unit": "°C", "group": "Temperature", "color": "#5D4037"},
 
     // --- ECG Metrics ---
-    "NOM_ECG_V_P_C_CNT": {"name": "MMS PVC Count", "unit": "", "group": "ECG PVC", "color": "#558B2F"},
-
-    // --- Pulse Analysis (from previous version, needed for AdvancedCharts) ---
-    "NOM_PULS_INTERVAL": {"name": "PPI Plot", "unit": "ms", "group": "Pulse Analysis", "color": "#E040FB"}
+    "NOM_ECG_V_P_C_CNT": {"name": "MMS PVC Count", "unit": "", "group": "ECG PVC", "color": "#558B2F"}
 };
 
 export type PhysioId = keyof typeof PHYSIO_META;

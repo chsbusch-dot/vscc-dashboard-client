@@ -119,6 +119,16 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
         timeDisplayRef.current = state.timeDisplay;
     }, [state.timeDisplay]);
 
+    // Each raw-waveform chart is self-contained: showing it ensures its waveform
+    // channel is actually being received, so the advanced toggle works on its own
+    // (independent of the Configure Data Source channel toggles).
+    useEffect(() => {
+        const t = state.globalWaveformToggles;
+        if (showRawPleth && !t.Pleth) actions.setGlobalWaveformToggle('Pleth', true);
+        if (showEcg && !t.ECG) actions.setGlobalWaveformToggle('ECG', true);
+        if (showResp && !t.Resp) actions.setGlobalWaveformToggle('Resp', true);
+    }, [showRawPleth, showEcg, showResp, state.globalWaveformToggles, actions]);
+
     // 1. DOM Listeners: Disable auto-scroll when user clicks, touches, or uses the mouse wheel on any chart
     useEffect(() => {
         const disableAutoScroll = () => {
