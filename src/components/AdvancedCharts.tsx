@@ -4,6 +4,7 @@ import * as SciChart from 'scichart';
 import { useDashboard, type WaveformId } from '../data/DashboardContext';
 import { getClinicalColor } from '../utils/colors';
 import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../utils/chartTimeAxis';
+import SpectrogramChart from './SpectrogramChart';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
@@ -57,7 +58,6 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
     const chartRespDiv = useRef<HTMLDivElement>(null); // Ref for RESP chart
     const chart2Div = useRef<HTMLDivElement>(null);
     const chart3Div = useRef<HTMLDivElement>(null);
-    const chart4Div = useRef<HTMLDivElement>(null);
 
     const dataSeriesRefs = useRef<Record<string, SciChart.XyDataSeries>>(Object.create(null));
     const surfacesRef = useRef<SciChart.SciChartSurface[]>([]);
@@ -84,7 +84,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             if (autoScrollRef.current) actions.setAutoScroll(false);
         };
 
-        const divs = [chart1Div.current, chartRespDiv.current, chart2Div.current, chart3Div.current, chart4Div.current];
+        const divs = [chart1Div.current, chartRespDiv.current, chart2Div.current, chart3Div.current];
         divs.forEach(container => {
             container?.addEventListener('mousedown', disableAutoScroll);
             container?.addEventListener('wheel', disableAutoScroll);
@@ -425,12 +425,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                     <div id="adv-chart-ppi" ref={chart2Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
                 </Paper>
             )}
-            {showSpectrogram && (
-                <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="subtitle1" gutterBottom>Spectrogram{getProgressText(null)}</Typography>
-                    <div id="adv-chart-spectrogram" ref={chart4Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
-                </Paper>
-            )}
+            {showSpectrogram && <SpectrogramChart />}
         </Box>
     );
 };
