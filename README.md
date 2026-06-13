@@ -40,6 +40,21 @@ the latest VSCapture automatically; no separate setup is needed.
 - **FIFO-bounded series** so long sessions don't leak memory
 - **Auto-scroll / follow-live** toggle, adjustable time window, and per-channel selection
 
+### Sessions, analysis & export
+- **Session browser** — recordings are auto-grouped into sessions (named start/stop with subject
+  code + notes); load any past session back into the charts, or delete it.
+- **Downloads** — per-session or all-sessions ZIP (CSV + Parquet), and **EDF** export for
+  EDFbrowser / MNE / biosignal toolchains, all streamed so multi-GB packages never block the browser.
+- **Capture-quality view** — per-waveform loss statistics (nominal rate, expected vs actual samples,
+  gaps, longest gap).
+- **HRV** — heart-rate variability from a session's ECG: mean HR, SDNN, RMSSD, pNN50, SD1/SD2 and a
+  **Poincaré** plot.
+- **Event annotations** — drop timestamped markers ("intubation", "drug given") and review/delete them.
+- **Capture health indicator** — a header chip polling the backend's `/api/status` (live / stalled /
+  offline, last-data age, DB lag, per-source clock offset). Observability only — never a clinical alarm.
+- **Settings** — data retention, **dashboard-managed capture config** (monitor IP, interval, waveset,
+  scale, devid with live recycle), and a **Local / UTC** time-display toggle.
+
 ### Waveforms & numerics
 
 ![Waveform and numeric charts](docs/screenshots/chart-grid.png)
@@ -96,11 +111,18 @@ Each channel is mapped independently, so you can mix sources (e.g. live MQTT vit
 | `src/data/constants.ts` | `PHYSIO_META` — metadata (label, unit, group, color) for every physiological ID |
 | `src/components/Sidebar.tsx` | Data-source controls, channel selection, MQTT/upload connection lifecycle |
 | `src/components/DataSourceModal.tsx` | Provider + per-channel topic/file mapping UI |
-| `src/components/AppLayout.tsx` | Layout and chart grouping |
+| `src/components/AppLayout.tsx` | Layout, chart grouping, header (health chip, time-zone chip, Mark-event, Sessions, Settings) |
 | `src/components/ChartContainer.tsx` | Primary waveform rendering (gold-standard SciChart lifecycle) |
 | `src/components/AdvancedCharts.tsx` | Raw Pleth / Respiration waveform charts |
 | `src/hooks/useSciChart.ts` | SciChart surface lifecycle hook |
 | `src/utils/dataParser.ts` | JSON export → `TelemetryRecord[]` parsing |
+| `src/components/SessionsDrawer.tsx` | Session browser — load / download / quality / HRV / delete, signals legend |
+| `src/components/SettingsDialog.tsx` | Retention, capture config, Local/UTC time toggle |
+| `src/components/SessionQualityDialog.tsx` | Per-waveform loss statistics + EDF download |
+| `src/components/SessionHrvDialog.tsx` | HRV metrics + Poincaré (pure SVG, outside the SciChart boundary) |
+| `src/components/AnnotationsDialog.tsx` | Add / list / delete event markers |
+| `src/components/HealthIndicator.tsx` | Capture-health header chip (polls `/api/status`) |
+| `src/data/sessionsApi.ts` | Typed REST client for sessions, quality, HRV, annotations, status, capture-config |
 
 **Stack:** React 19 · TypeScript 5.9 · Vite 7 · SciChart.js 5 · MUI 7 · mqtt.js 5.
 
