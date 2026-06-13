@@ -26,7 +26,8 @@ MQTT (EMQX) + TimescaleDB stack built around
 patient-monitor capture tool by John George K. The backend's installer downloads
 the latest VSCapture automatically; no separate setup is needed.
 
-![MP50 Vital Sign Dashboard](docs/screenshots/dashboard-full.png)
+<!-- TODO: screenshot pending regeneration for the MMS-only edition — restore once captured:
+![MP50 Vital Sign Dashboard](docs/screenshots/dashboard-full.png) -->
 
 ---
 
@@ -55,7 +56,8 @@ the latest VSCapture automatically; no separate setup is needed.
 
 ### Waveforms & numerics
 
-![Waveform and numeric charts](docs/screenshots/chart-grid.png)
+<!-- TODO: screenshot pending regeneration for the MMS-only edition — restore once captured:
+![Waveform and numeric charts](docs/screenshots/chart-grid.png) -->
 
 > The screenshots above show SpO₂ and pulse trends, a raw plethysmograph pulse waveform, and a
 > respiration trace from recorded MP50 data.
@@ -151,5 +153,5 @@ npm install scichart@latest && npm install
 
 ## PHI awareness
 
-This system processes medical telemetry that may be HIPAA/HITRUST classified. **Do not** add
+This system processes medical telemetry that contains regulated ePHI. **Do not** add
 `console.log()` statements that emit patient data or raw physiological payloads.
