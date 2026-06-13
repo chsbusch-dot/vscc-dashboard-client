@@ -16,7 +16,7 @@ export interface TimeSeries {
     y: (number | null)[];
 }
 
-export type WaveformId = 'VitalSigns' | 'ECG' | 'EEG' | 'Pleth' | 'Resp';
+export type WaveformId = 'VitalSigns' | 'ECG' | 'Pleth' | 'Resp';
 export type ProviderId = 'url' | 'websocket' | 'mqtt' | 'upload';
 
 export interface WaveformMatrixEntry {
@@ -50,8 +50,6 @@ export interface DashboardState {
         resp: boolean;
         ppi: boolean;
         overlay: boolean;
-        spectrogram: boolean;
-        anomaly: boolean;
     };
 }
 
@@ -114,28 +112,24 @@ const initialState: DashboardState = {
     globalWaveformToggles: {
         VitalSigns: true,
         ECG: false,
-        EEG: false,
         Pleth: true,
         Resp: true,
     },
     providerMappings: {
         VitalSigns: { label: 'Vital Signs', isHighFrequency: false, mappings: { url: 'DataExportVSC.json', websocket: 'ws/stream', mqtt: 'mp50/VitalSigns', upload: 'DataExportVSC.json' } },
         ECG: { label: 'HF ECG', isHighFrequency: true, mappings: { url: 'ECG.json', websocket: 'ws/stream/ecg', mqtt: 'mp50/HF-ECG', upload: 'NOM_ECG_ELEC_POTL_IIWaveExport.csv' } },
-        EEG: { label: 'HF EEG', isHighFrequency: true, mappings: { url: 'EEG.json', websocket: 'ws/stream/eeg', mqtt: 'mp50/HF-EEG', upload: 'NOM_EEG_ELEC_POTL_CRTXWaveExport.csv' } },
         Pleth: { label: 'HF PLETH', isHighFrequency: true, mappings: { url: 'PLETH.json', websocket: 'ws/stream/pleth', mqtt: 'mp50/HF-PLETH', upload: 'NOM_PLETHWaveExport.csv' } },
         Resp: { label: 'HF RESP', isHighFrequency: true, mappings: { url: 'RESP.json', websocket: 'ws/stream/resp', mqtt: 'mp50/HF-RESP', upload: 'NOM_RESPWaveExport.csv' } },
     },
     fileInputs: {
         VitalSigns: null,
         ECG: null,
-        EEG: null,
         Pleth: null,
         Resp: null,
     },
     uploadProgress: {
         VitalSigns: 0,
         ECG: 0,
-        EEG: 0,
         Pleth: 0,
         Resp: 0,
     },
@@ -150,7 +144,7 @@ const initialState: DashboardState = {
         acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_PLETH', 'NOM_RESP'].includes(key);
         return acc;
     }, {} as Record<PhysioId, boolean>),
-    advancedCharts: { rawPleth: true, resp: true, ppi: false, overlay: false, spectrogram: false, anomaly: false },
+    advancedCharts: { rawPleth: true, resp: true, ppi: false, overlay: false },
 };
 
 const dashboardReducer = (prev: DashboardState, action: Partial<DashboardState>): DashboardState => {

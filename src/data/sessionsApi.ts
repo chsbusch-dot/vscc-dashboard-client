@@ -233,37 +233,6 @@ export const fetchSessionQuality = (id: number): Promise<SessionQuality> =>
 /** GET /api/status — worker/capture health snapshot. */
 export const fetchStatus = (): Promise<StatusResponse> => request<StatusResponse>('/api/status');
 
-export interface HrvMetrics {
-    beats: number;
-    insufficient: boolean;
-    mean_hr_bpm?: number;
-    mean_rr_ms?: number;
-    sdnn_ms?: number;
-    rmssd_ms?: number | null;
-    pnn50_pct?: number | null;
-    sd1_ms?: number | null;
-    sd2_ms?: number | null;
-}
-
-export interface HrvResponse {
-    session: SessionInfo;
-    physio_id?: string;
-    samples?: number;
-    ok?: boolean;
-    error?: string;
-    fs_hz?: number;
-    r_peaks?: number;
-    rr_accepted?: number;
-    rr_rejected?: number;
-    hrv?: HrvMetrics;
-    /** (RR[n], RR[n+1]) pairs in ms */
-    poincare?: [number, number][];
-}
-
-/** GET /api/sessions/{id}/hrv — HRV metrics + Poincaré from the session's ECG. */
-export const fetchSessionHrv = (id: number): Promise<HrvResponse> =>
-    request<HrvResponse>(`/api/sessions/${id}/hrv`);
-
 export interface Annotation {
     id: number;
     /** epoch seconds */

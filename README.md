@@ -16,7 +16,7 @@ session recording, and data export for patient-monitor telemetry.
 > before sharing it.
 
 Real-time physiological telemetry dashboard for the **Philips MP50** patient monitor.
-Captured waveforms and numerics (ECG, SpO₂, Pleth, Respiration, EEG, NIBP) are streamed
+Captured waveforms and numerics (ECG, SpO₂, Pleth, Respiration, NIBP) are streamed
 into a React + [SciChart.js](https://www.scichart.com/) WebGL canvas and rendered at 60 FPS.
 
 This is the **frontend**. It pairs with the
@@ -33,7 +33,7 @@ the latest VSCapture automatically; no separate setup is needed.
 ## Features
 
 - **Live MQTT streaming** over WebSocket (`mqtt` client) with per-channel topic mapping
-- **High-frequency waveforms** — Pleth and Respiration rendered as continuous traces, plus ECG/EEG channels
+- **High-frequency waveforms** — Pleth and Respiration rendered as continuous traces, plus ECG channels
 - **Numeric vitals** — SpO₂, pulse rate, NIBP (systolic/diastolic/mean), respiration rate, heart rate
 - **Multiple data sources** — live MQTT broker, URL polling, and local file upload / replay of recorded exports
 - **Synchronized zoom & pan** across all charts (`GlobalSyncGroup`)
@@ -60,8 +60,7 @@ the latest VSCapture automatically; no separate setup is needed.
 ![Waveform and numeric charts](docs/screenshots/chart-grid.png)
 
 > The screenshots above show SpO₂ and pulse trends, a raw plethysmograph pulse waveform, and a
-> respiration trace from recorded MP50 data, alongside an EEG channel. (The MP50 in this setup does
-> not output EEG, so the EEG trace is a generated demo signal.)
+> respiration trace from recorded MP50 data.
 
 ---
 

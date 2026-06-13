@@ -103,14 +103,11 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         const units = new Set(physioIds.map(id => PHYSIO_META[id].unit).filter(Boolean));
         const yAxisTitle = units.size === 1 ? Array.from(units)[0] : "Value";
 
-        // FIX: For BIS, clamp Y-Axis to 0-100 to prevent auto-ranging noise
-        const isBis = physioIds.includes('NOM_EEG_BISPECTRAL_INDEX');
         const yAxisOptions: SciChart.INumericAxisOptions = {
             axisTitle: yAxisTitle,
             drawMajorBands: false,
-            autoRange: isBis ? SciChart.EAutoRange.Never : SciChart.EAutoRange.Always,
-            growBy: isBis ? undefined : new SciChart.NumberRange(0.2, 0.2),
-            visibleRange: isBis ? new SciChart.NumberRange(0, 100) : undefined,
+            autoRange: SciChart.EAutoRange.Always,
+            growBy: new SciChart.NumberRange(0.2, 0.2),
         };
 
         surface.yAxes.add(new SciChart.NumericAxis(wasmContext, yAxisOptions));

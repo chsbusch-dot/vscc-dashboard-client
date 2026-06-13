@@ -475,8 +475,6 @@ const Sidebar = () => {
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.resp} onChange={() => actions.toggleAdvancedChart('resp')} />} label="Respiration Waveform" />
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.ppi} onChange={() => actions.toggleAdvancedChart('ppi')} />} label="PPI Plot" />
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.overlay} onChange={() => actions.toggleAdvancedChart('overlay')} />} label="Derived Parameters Overlay" />
-                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.spectrogram} onChange={() => actions.toggleAdvancedChart('spectrogram')} />} label="Spectrogram" />
-                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.anomaly} onChange={() => actions.toggleAdvancedChart('anomaly')} />} label="Anomaly Monitor (z-score)" />
                     </Box>
                 )}
             </Box>

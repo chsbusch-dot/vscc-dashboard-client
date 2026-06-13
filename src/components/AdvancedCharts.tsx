@@ -4,7 +4,6 @@ import * as SciChart from 'scichart';
 import { useDashboard, type WaveformId } from '../data/DashboardContext';
 import { getClinicalColor } from '../utils/colors';
 import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../utils/chartTimeAxis';
-import SpectrogramChart from './SpectrogramChart';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
@@ -12,7 +11,6 @@ interface AdvancedChartsProps {
     showResp: boolean; // Add RESP prop
     showPpi: boolean;
     showOverlay: boolean;
-    showSpectrogram: boolean;
 }
 
 /** A signal-loss interval [start, end] in epoch seconds, used for gap shading. */
@@ -96,7 +94,7 @@ const shadeGaps = (st: GapState | undefined, gaps: Gap[]) => {
     }
 };
 
-const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawPleth, showResp, showPpi, showOverlay, showSpectrogram }) => {
+const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawPleth, showResp, showPpi, showOverlay }) => {
     const { state, actions, subscribeToData, dataRef } = useDashboard();
     const chart1Div = useRef<HTMLDivElement>(null);
     const chartRespDiv = useRef<HTMLDivElement>(null); // Ref for RESP chart
@@ -144,7 +142,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 container?.removeEventListener('touchstart', disableAutoScroll);
             });
         };
-    }, [actions, showRawPleth, showResp, showPpi, showOverlay, showSpectrogram]);
+    }, [actions, showRawPleth, showResp, showPpi, showOverlay]);
 
     useEffect(() => {
         return () => {
@@ -326,7 +324,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             dataSeriesRefs.current = {};
             gapStateRef.current = {};
         }
-    }, [showRawPleth, showResp, showPpi, showOverlay, showSpectrogram, verticalGroup]);
+    }, [showRawPleth, showResp, showPpi, showOverlay, verticalGroup]);
 
     // Re-render axis labels when the Local/UTC toggle changes.
     // Formatting only: existing surfaces are invalidated, never recreated.
@@ -484,7 +482,6 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                     <div id="adv-chart-ppi" ref={chart2Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
                 </Paper>
             )}
-            {showSpectrogram && <SpectrogramChart />}
         </Box>
     );
 };
