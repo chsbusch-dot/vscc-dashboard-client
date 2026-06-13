@@ -75,6 +75,8 @@ export interface DashboardActions {
     selectAll: () => void;
     deselectAll: () => void;
     toggleAdvancedChart: (chart: keyof DashboardState['advancedCharts']) => void;
+    /** Apply a saved view layout (which charts/channels are shown + view settings) in one update. */
+    applyLayout: (layout: Partial<DashboardState>) => void;
     appendData: (records: TelemetryRecord[]) => void;
     clearData: () => void;
 }
@@ -206,6 +208,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             dispatch({ selectedPhysioIds: allIds });
         },
         toggleAdvancedChart: (chart) => dispatch({ advancedCharts: { ...state.advancedCharts, [chart]: !state.advancedCharts[chart] } }),
+        applyLayout: (layout) => dispatch(layout),
         appendData: (records: TelemetryRecord[]) => {
             if (records.length === 0) return;
             records.forEach(r => {

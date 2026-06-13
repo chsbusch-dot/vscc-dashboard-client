@@ -16,6 +16,7 @@ import HistoryIcon from '@mui/icons-material/History';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import BookmarkAddIcon from '@mui/icons-material/BookmarkAdd';
+import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize';
 import { SciChartVerticalGroup } from 'scichart';
 import Sidebar from './Sidebar';
 import { useDashboard } from '../data/DashboardContext';
@@ -26,6 +27,7 @@ import SessionsDrawer from './SessionsDrawer';
 import SettingsDialog from './SettingsDialog';
 import HealthIndicator from './HealthIndicator';
 import AnnotationsDialog from './AnnotationsDialog';
+import LayoutsDialog from './LayoutsDialog';
 import RecordingIndicator from './RecordingIndicator';
 import { getZoneLabel } from '../utils/timeFormat';
 
@@ -38,6 +40,7 @@ const AppLayout = () => {
     const [sessionsOpen, setSessionsOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [annotationsOpen, setAnnotationsOpen] = useState(false);
+    const [layoutsOpen, setLayoutsOpen] = useState(false);
 
     const zoneLabel = useMemo(() => getZoneLabel(state.timeDisplay), [state.timeDisplay]);
 
@@ -122,6 +125,11 @@ const AppLayout = () => {
                                 <BookmarkAddIcon />
                             </IconButton>
                         </Tooltip>
+                        <Tooltip title="Saved layouts">
+                            <IconButton color="inherit" aria-label="Saved layouts" onClick={() => setLayoutsOpen(true)}>
+                                <DashboardCustomizeIcon />
+                            </IconButton>
+                        </Tooltip>
                         <Button
                             color="inherit"
                             startIcon={<HistoryIcon />}
@@ -180,6 +188,7 @@ const AppLayout = () => {
             <SessionsDrawer open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
             <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
             <AnnotationsDialog open={annotationsOpen} onClose={() => setAnnotationsOpen(false)} />
+            <LayoutsDialog open={layoutsOpen} onClose={() => setLayoutsOpen(false)} />
         </Box>
     );
 };
