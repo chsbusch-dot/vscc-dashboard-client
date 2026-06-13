@@ -22,7 +22,7 @@ import { useDashboard, type TelemetryRecord, type ProviderId, type WaveformId } 
 import { PHYSIO_META, type PhysioId } from '../data/constants';
 import { getClinicalColor } from '../utils/colors';
 import { DataSourceModal } from './DataSourceModal';
-import { isMqttTelemetryMessage, processRawData } from '../utils/dataParser';
+import { isMqttTelemetryMessage, processRawData, selectFreshRecords } from '../utils/dataParser';
 
 const StyledButton = styled(Button)(({ theme, color }) => ({
     ...(color === 'error' && { backgroundColor: theme.palette.error.main, color: theme.palette.error.contrastText, '&:hover': { backgroundColor: theme.palette.error.dark } }),
@@ -37,6 +37,10 @@ const Sidebar = () => {
     
     // Refs for connection objects and state that shouldn't trigger re-renders
     const pollingInterval = useRef<number | null>(null);
+    // Per-channel high-water timestamp for URL (JSON poll) dedup. Each poll
+    // re-fetches the WHOLE export, so without this dataRef would accumulate the
+    // same timestamps every 5s — growing unbounded and (now) re-binned each tick.
+    const urlHighWaterRef = useRef<Record<string, number>>({});
     const mqttClient = useRef<MqttClient | null>(null);
     const websocket = useRef<WebSocket | null>(null);
     const replayState = useRef<{ intervalId: number | null }>({ intervalId: null });
@@ -123,6 +127,7 @@ const Sidebar = () => {
             actions.setStatus('Ready');
             actions.setReplayProgress(0);
             actions.clearData();
+            urlHighWaterRef.current = {};
             actions.setDataSource(newDataSource);
             actions.setAutoScroll(true);
             if (newDataSource === 'upload') {
@@ -263,6 +268,7 @@ const Sidebar = () => {
     const handleStop = () => {
         stopAllStreams();
         actions.clearData();        // blank the charts — Stop means stop, not "freeze on stale data"
+        urlHighWaterRef.current = {};
         actions.setStatus('Ready');
         actions.setReplayProgress(0);
         setActiveMode(null);
@@ -280,6 +286,7 @@ const Sidebar = () => {
         if (activeMode === 'live') { handlePauseResume(); return; }
         stopAllStreams();
         actions.clearData();
+        urlHighWaterRef.current = {}; // fresh stream — forget prior high-water marks
         setActiveMode('live');
         actions.setAutoScroll(true);
         const startPolling = async () => {
@@ -287,7 +294,7 @@ const Sidebar = () => {
             const response = await fetch(state.jsonUrl);
             const text = await response.text();
             const records = processRawData(text);
-            actions.appendData(records);
+            actions.appendData(selectFreshRecords(records, urlHighWaterRef.current));
             actions.setStatus('Streaming');
             if (state.dataSource === 'url') {
                 pollingInterval.current = window.setInterval(() => {
@@ -295,7 +302,7 @@ const Sidebar = () => {
                         const resp = await fetch(state.jsonUrl);
                         const newText = await resp.text();
                         const newRecords = processRawData(newText);
-                        actions.appendData(newRecords);
+                        actions.appendData(selectFreshRecords(newRecords, urlHighWaterRef.current));
                     };
                     poll().catch(console.error);
                 }, 5000);

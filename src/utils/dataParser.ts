@@ -98,3 +98,24 @@ export const processRawData = (text: string): TelemetryRecord[] => {
         }];
     });
 };
+
+/**
+ * Keeps only records newer than the latest already seen per channel, advancing
+ * the `highWater` map in place. The URL (JSON poll) source re-fetches the whole
+ * export every tick, so without this the same timestamps would be re-appended
+ * each poll — growing the buffer unbounded and inflating running stats.
+ */
+export const selectFreshRecords = (
+    records: TelemetryRecord[],
+    highWater: Record<string, number>,
+): TelemetryRecord[] => {
+    const fresh = records.filter(r => {
+        const last = highWater[r.physio_id];
+        return last === undefined || r.time > last;
+    });
+    for (const r of fresh) {
+        const cur = highWater[r.physio_id];
+        if (cur === undefined || r.time > cur) highWater[r.physio_id] = r.time;
+    }
+    return fresh;
+};
