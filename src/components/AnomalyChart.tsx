@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Chip, FormControl, MenuItem, Select, Stack, Typography } from '@mui/material';
 import { useDashboard } from '../data/DashboardContext';
 import { PHYSIO_META, type PhysioId } from '../data/constants';
@@ -6,14 +6,24 @@ import { getClinicalColor } from '../utils/colors';
 import { formatChartTime } from '../utils/timeFormat';
 import { rollingZScores, anomalyRuns } from '../utils/anomaly';
 
-/** Numeric trends worth monitoring for sudden departures from recent history. */
-const CANDIDATES: PhysioId[] = [
+/** Preferred default channels, in priority order, when several numerics stream. */
+const PREFERRED: string[] = [
     'NOM_PLETH_PULS_RATE',
     'NOM_PULS_OXIM_SAT_O2',
     'NOM_ECG_CARD_BEAT_RATE',
     'NOM_RESP_RATE',
-    'NOM_PULS_OXIM_PERF_REL',
 ];
+
+/**
+ * High-frequency waveform channels — excluded from the picker because z-scoring
+ * a 125 Hz waveform against a trailing window is meaningless. Everything else in
+ * the data buffer is treated as a numeric trend.
+ */
+const WAVEFORM_IDS = new Set<string>([
+    'NOM_PLETH', 'NOM_RESP', 'NOM_PLETH_WAVE_A',
+    'NOM_ECG_ELEC_POTL_II', 'NOM_ECG_ELEC_POTL_I', 'NOM_ECG_ELEC_POTL_V',
+    'NOM_EEG_ELEC_POTL_CRTX',
+]);
 
 const WINDOW_S = 300;      // display the trailing 5 minutes
 const STATS_WINDOW = 24;   // trailing samples used to estimate mean/std
@@ -21,28 +31,31 @@ const MIN_SAMPLES = 12;    // history needed before any point can be flagged
 const THRESHOLD = 3;       // |z| ≥ 3 → anomaly
 const REDRAW_MS = 1000;
 
-const PAD = { top: 12, right: 14, bottom: 22, left: 44 };
+const PAD = { top: 12, right: 14, bottom: 22, left: 48 };
+
+const labelFor = (id: string): string => (id in PHYSIO_META ? PHYSIO_META[id as PhysioId].name : id);
+const unitFor = (id: string): string => (id in PHYSIO_META ? PHYSIO_META[id as PhysioId].unit : '');
 
 /**
  * Rolling z-score anomaly monitor for a numeric trend, drawn on a 2D canvas
- * (no SciChart/WebGL). Each reading is scored against the trailing window of
- * recent samples; stretches where |z| ≥ 3 are shaded red and the points
- * outlined, so a sudden HR/SpO₂ excursion stands out without alarms.
+ * (no SciChart/WebGL). The channel list is discovered live from whatever
+ * numerics are streaming, so it adapts to the monitor's setup (SpO₂, ECG,
+ * EEG/BIS…). Each reading is scored against its trailing window; stretches
+ * where |z| ≥ 3 are shaded red and the points outlined.
  */
 const AnomalyChart: React.FC = () => {
-    const { state, dataRef } = useDashboard();
-    const [selected, setSelected] = useState<PhysioId>('NOM_PLETH_PULS_RATE');
+    const { dataRef, state } = useDashboard();
+    const [available, setAvailable] = useState<string[]>([]);
+    const [selected, setSelected] = useState<string>('');
     const [latest, setLatest] = useState<{ value: number; z: number; anomalies: number } | null>(null);
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
+    const availableRef = useRef<string[]>([]);
     const selectedRef = useRef(selected);
     const timeDisplayRef = useRef(state.timeDisplay);
     useEffect(() => { selectedRef.current = selected; }, [selected]);
     useEffect(() => { timeDisplayRef.current = state.timeDisplay; }, [state.timeDisplay]);
-
-    const meta = PHYSIO_META[selected];
-    const color = useMemo(() => getClinicalColor(selected), [selected]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -51,7 +64,22 @@ const AnomalyChart: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        let raf = 0;
+        let timer = 0;
+
+        const discoverChannels = () => {
+            const ids = Object.keys(dataRef.current)
+                .filter((id) => !WAVEFORM_IDS.has(id) && (dataRef.current[id]?.x.length ?? 0) > 0)
+                .sort();
+            if (ids.join('|') !== availableRef.current.join('|')) {
+                availableRef.current = ids;
+                setAvailable(ids);
+            }
+            if (ids.length > 0 && !ids.includes(selectedRef.current)) {
+                const pick = PREFERRED.find((p) => ids.includes(p)) ?? ids[0];
+                selectedRef.current = pick;
+                setSelected(pick);
+            }
+        };
 
         const draw = () => {
             const dpr = window.devicePixelRatio || 1;
@@ -66,7 +94,7 @@ const AnomalyChart: React.FC = () => {
             ctx.clearRect(0, 0, cssW, cssH);
 
             const id = selectedRef.current;
-            const series = dataRef.current[id];
+            const series = id ? dataRef.current[id] : undefined;
             const plotW = cssW - PAD.left - PAD.right;
             const plotH = cssH - PAD.top - PAD.bottom;
 
@@ -88,7 +116,8 @@ const AnomalyChart: React.FC = () => {
                 ctx.font = '13px system-ui, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(`Waiting for ${meta.name} data…`, cssW / 2, cssH / 2);
+                const what = id ? labelFor(id) : 'numeric';
+                ctx.fillText(`Waiting for ${what} data…`, cssW / 2, cssH / 2);
                 setLatest((p) => (p === null ? p : null));
                 return;
             }
@@ -110,6 +139,8 @@ const AnomalyChart: React.FC = () => {
             const tStart = tEnd - WINDOW_S;
             const xOf = (t: number) => PAD.left + ((t - tStart) / WINDOW_S) * plotW;
             const yOf = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * plotH;
+            const unit = unitFor(id);
+            const decimals = unit === '%' ? 0 : 1;
 
             // Plot frame + y gridlines/labels.
             ctx.strokeStyle = 'rgba(0,0,0,0.12)';
@@ -125,7 +156,7 @@ const AnomalyChart: React.FC = () => {
                 ctx.moveTo(PAD.left, y);
                 ctx.lineTo(cssW - PAD.right, y);
                 ctx.stroke();
-                ctx.fillText(v.toFixed(meta.unit === '%' ? 0 : 1), PAD.left - 6, y);
+                ctx.fillText(v.toFixed(decimals), PAD.left - 6, y);
             }
 
             // X time labels (left / mid / right edges).
@@ -165,7 +196,7 @@ const AnomalyChart: React.FC = () => {
             // Trend line.
             ctx.beginPath();
             ctx.lineWidth = 1.75;
-            ctx.strokeStyle = color;
+            ctx.strokeStyle = getClinicalColor(id);
             for (let i = 0; i < scored.length; i++) {
                 const x = xOf(scored[i].t);
                 const y = yOf(scored[i].v);
@@ -188,8 +219,9 @@ const AnomalyChart: React.FC = () => {
         };
 
         const tick = () => {
+            discoverChannels();
             draw();
-            raf = window.setTimeout(tick, REDRAW_MS) as unknown as number;
+            timer = window.setTimeout(tick, REDRAW_MS) as unknown as number;
         };
         tick();
 
@@ -197,24 +229,30 @@ const AnomalyChart: React.FC = () => {
         ro.observe(wrap);
 
         return () => {
-            window.clearTimeout(raf);
+            window.clearTimeout(timer);
             ro.disconnect();
         };
-        // meta.name/color are derived from `selected`; selectedRef keeps the loop current
-    }, [dataRef, color, meta.name, meta.unit]);
+    }, [dataRef]);
+
+    const unit = unitFor(selected);
+    const decimals = unit === '%' ? 0 : 1;
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                <FormControl size="small" sx={{ minWidth: 200 }}>
+                <FormControl size="small" sx={{ minWidth: 220 }}>
                     <Select
-                        value={selected}
-                        onChange={(e) => setSelected(e.target.value)}
+                        value={available.includes(selected) ? selected : ''}
+                        displayEmpty
+                        onChange={(e) => { selectedRef.current = e.target.value; setSelected(e.target.value); }}
                         aria-label="Anomaly monitor channel"
                     >
-                        {CANDIDATES.map((id) => (
+                        {available.length === 0 && (
+                            <MenuItem value="" disabled>No numeric channels yet</MenuItem>
+                        )}
+                        {available.map((id) => (
                             <MenuItem key={id} value={id}>
-                                {PHYSIO_META[id].name}{PHYSIO_META[id].unit ? ` (${PHYSIO_META[id].unit})` : ''}
+                                {labelFor(id)}{unitFor(id) ? ` (${unitFor(id)})` : ''}
                             </MenuItem>
                         ))}
                     </Select>
@@ -224,7 +262,7 @@ const AnomalyChart: React.FC = () => {
                         <Chip
                             size="small"
                             variant="outlined"
-                            label={`now ${latest.value.toFixed(meta.unit === '%' ? 0 : 1)}${meta.unit ? ` ${meta.unit}` : ''}  ·  z ${latest.z.toFixed(1)}`}
+                            label={`now ${latest.value.toFixed(decimals)}${unit ? ` ${unit}` : ''}  ·  z ${latest.z.toFixed(1)}`}
                         />
                         <Chip
                             size="small"
