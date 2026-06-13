@@ -31,7 +31,6 @@ export const PHYSIO_META = {
     "NOM_PULS_OXIM_SAT_O2": {"name": "MMS SpO2", "unit": "%", "group": "MMS SpO2", "color": "#00838F"},
     "NOM_PLETH_PULS_RATE": {"name": "MMS SpO2 Pulse", "unit": "bpm", "group": "MMS SpO2 Pulse", "color": "#0277BD"},
     "NOM_PULS_OXIM_PERF_REL": {"name": "MMS Perf Index", "unit": "", "group": "MMS Perf Index", "color": "#006064"},
-    "NOM_PLETH_WAVE_A": {"name": "MMS PLETH Wave", "unit": "ADU", "group": "Oxygenation", "color": "#0277BD"},
     "NOM_PRESS_BLD_NONINV_SYS": {"name": "MMS NIBP Systolic", "unit": "mmHg", "group": "NIBP", "color": "#C62828"},
     "NOM_PRESS_BLD_NONINV_DIA": {"name": "MMS NIBP Diastolic", "unit": "mmHg", "group": "NIBP", "color": "#880E4F"},
     "NOM_PRESS_BLD_NONINV_MEAN": {"name": "MMS NIBP Mean", "unit": "mmHg", "group": "NIBP", "color": "#BF360C"},
@@ -43,7 +42,6 @@ export const PHYSIO_META = {
     //"iTtymp": {"name": "MMS Temp Tympanic", "unit": "°C", "group": "Temperature", "color": "#5D4037"},
 
     // --- ECG Metrics ---
-    "NOM_ECG_AMPL_ST_II": {"name": "MMS ST II", "unit": "mm", "group": "ECG ST", "color": "#1B5E20"},
     "NOM_ECG_V_P_C_CNT": {"name": "MMS PVC Count", "unit": "", "group": "ECG PVC", "color": "#558B2F"},
 
     // --- Pulse Analysis (from previous version, needed for AdvancedCharts) ---

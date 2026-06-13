@@ -73,7 +73,7 @@ describe('signalDisplayLabel', () => {
     });
 
     it('maps known waveform physio ids to their friendly names', () => {
-        expect(signalDisplayLabel('NOM_PLETH_WAVE_A')).toBe('MMS PLETH Wave');
+        expect(signalDisplayLabel('NOM_RESP_RATE')).toBe('MMS Resp Rate');
     });
 
     it('falls back to the raw id for unknown signals', () => {

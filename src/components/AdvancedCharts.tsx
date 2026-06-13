@@ -8,9 +8,8 @@ import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../ut
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
     showRawPleth: boolean;
+    showEcg: boolean;
     showResp: boolean; // Add RESP prop
-    showPpi: boolean;
-    showOverlay: boolean;
 }
 
 /** A signal-loss interval [start, end] in epoch seconds, used for gap shading. */
@@ -94,19 +93,17 @@ const shadeGaps = (st: GapState | undefined, gaps: Gap[]) => {
     }
 };
 
-const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawPleth, showResp, showPpi, showOverlay }) => {
+const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawPleth, showEcg, showResp }) => {
     const { state, actions, subscribeToData, dataRef } = useDashboard();
     const chart1Div = useRef<HTMLDivElement>(null);
+    const chartEcgDiv = useRef<HTMLDivElement>(null);
     const chartRespDiv = useRef<HTMLDivElement>(null); // Ref for RESP chart
-    const chart2Div = useRef<HTMLDivElement>(null);
-    const chart3Div = useRef<HTMLDivElement>(null);
 
     const dataSeriesRefs = useRef<Record<string, SciChart.XyDataSeries>>(Object.create(null));
     const surfacesRef = useRef<SciChart.SciChartSurface[]>([]);
     // Per-waveform signal-gap shading: the surface to draw on + its live box annotations.
     const gapStateRef = useRef<Record<string, { surface: SciChart.SciChartSurface; boxes: SciChart.BoxAnnotation[] }>>(Object.create(null));
     const observersRef = useRef<ResizeObserver[]>([]);
-    const ppiLastPeakRef = useRef<{time: number, val: number}>({time: -1, val: 0}); 
     const lastDataRef = useRef<{ timestamp: number; receivedAt: number } | null>(null);
 
     // Keep a stable ref for event listeners to check autoScroll status without triggering re-renders
@@ -128,7 +125,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             if (autoScrollRef.current) actions.setAutoScroll(false);
         };
 
-        const divs = [chart1Div.current, chartRespDiv.current, chart2Div.current, chart3Div.current];
+        const divs = [chart1Div.current, chartEcgDiv.current, chartRespDiv.current];
         divs.forEach(container => {
             container?.addEventListener('mousedown', disableAutoScroll);
             container?.addEventListener('wheel', disableAutoScroll);
@@ -142,7 +139,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 container?.removeEventListener('touchstart', disableAutoScroll);
             });
         };
-    }, [actions, showRawPleth, showResp, showPpi, showOverlay]);
+    }, [actions, showRawPleth, showEcg, showResp]);
 
     useEffect(() => {
         return () => {
@@ -248,6 +245,54 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 sciChartSurface.resumeUpdates();
             }
 
+            // --- Chart 1b: Time-Domain Waveform Plot (Raw ECG Signal) ---
+            if (chartEcgDiv.current && showEcg) {
+                const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chartEcgDiv.current, {
+                    theme: new SciChart.SciChartJSLightTheme()
+                });
+                if (!isMounted) {
+                    sciChartSurface.delete();
+                    return;
+                }
+                localSurfaces.push(sciChartSurface);
+                surfacesRef.current.push(sciChartSurface);
+                sciChartSurface.suspendUpdates();
+
+                const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, {
+                    axisTitle: "Time",
+                    visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
+                    labelProvider: makeTimeLabelProvider()
+                });
+                const yAxis = new SciChart.NumericAxis(wasmContext, {
+                    axisTitle: "ECG (A-D Units)",
+                    autoRange: SciChart.EAutoRange.Always,
+                    growBy: new SciChart.NumberRange(0.1, 0.1)
+                });
+                sciChartSurface.xAxes.add(xAxis);
+                sciChartSurface.yAxes.add(yAxis);
+
+                const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000, containsNaN: true });
+                dataSeriesRefs.current.rawEcg = dataSeries;
+                gapStateRef.current.rawEcg = { surface: sciChartSurface, boxes: [] };
+
+                const existingEcg = dataRef.current['NOM_ECG_ELEC_POTL_II'];
+                if (existingEcg && existingEcg.x.length > 0) {
+                    shadeGaps(gapStateRef.current.rawEcg, appendSafe(dataSeries, existingEcg.x, existingEcg.y));
+                }
+
+                sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
+                    dataSeries, stroke: getClinicalColor('NOM_ECG_ELEC_POTL_II'), strokeThickness: 2
+                }));
+
+                sciChartSurface.chartModifiers.add(...getModifiers());
+
+                const observer = new ResizeObserver(() => sciChartSurface?.invalidateElement());
+                observer.observe(chartEcgDiv.current);
+                localObservers.push(observer);
+                observersRef.current.push(observer);
+                sciChartSurface.resumeUpdates();
+            }
+
             // --- Chart 5: RESP Waveform ---
             if (chartRespDiv.current && showResp) {
                 const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chartRespDiv.current, {
@@ -324,7 +369,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             dataSeriesRefs.current = {};
             gapStateRef.current = {};
         }
-    }, [showRawPleth, showResp, showPpi, showOverlay, verticalGroup]);
+    }, [showRawPleth, showEcg, showResp, verticalGroup]);
 
     // Re-render axis labels when the Local/UTC toggle changes.
     // Formatting only: existing surfaces are invalidated, never recreated.
@@ -341,7 +386,6 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                     st.boxes.forEach(b => { try { st.surface.annotations.remove(b); } catch { /* gone */ } });
                     st.boxes = [];
                 });
-                ppiLastPeakRef.current = {time: -1, val: 0};
                 return;
             }
 
@@ -373,22 +417,18 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 shadeGaps(gapStateRef.current.rawPleth, appendSafe(dataSeriesRefs.current.rawPleth, plethData.x, plethData.y));
             }
 
+            // --- Append ECG data ---
+            const ecgData = updateMap['NOM_ECG_ELEC_POTL_II'];
+            if (ecgData && dataSeriesRefs.current.rawEcg) {
+                shadeGaps(gapStateRef.current.rawEcg, appendSafe(dataSeriesRefs.current.rawEcg, ecgData.x, ecgData.y));
+            }
+
             // --- Append RESP data ---
             const respData = updateMap['NOM_RESP'];
             if (respData && dataSeriesRefs.current.rawResp) {
                 shadeGaps(gapStateRef.current.rawResp, appendSafe(dataSeriesRefs.current.rawResp, respData.x, respData.y));
             }
-            
-            const prData = updateMap['NOM_PLETH_PULS_RATE'];
-            if (prData && dataSeriesRefs.current.overlayPR) {
-                 appendSafe(dataSeriesRefs.current.overlayPR, prData.x, prData.y);
-            }
 
-            const spo2Data = updateMap['NOM_PULS_OXIM_SAT_O2'];
-            if (spo2Data && dataSeriesRefs.current.overlaySpo2) {
-                 appendSafe(dataSeriesRefs.current.overlaySpo2, spo2Data.x, spo2Data.y);
-            }
-            
             // Batch flush the WebGL paints
             surfacesRef.current.forEach(s => s.resumeUpdates());
         });
@@ -467,6 +507,15 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                     <div id="adv-chart-pleth" ref={chart1Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
                 </Paper>
             )}
+            {showEcg && (
+                <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                        <Typography variant="subtitle1" gutterBottom>Raw ECG Waveform</Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
+                    </Box>
+                    <div id="adv-chart-ecg" ref={chartEcgDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
+                </Paper>
+            )}
             {showResp && (
                 <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
                     <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
@@ -474,12 +523,6 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                         <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
                     </Box>
                     <div id="adv-chart-resp" ref={chartRespDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
-                </Paper>
-            )}
-            {showPpi && (
-                <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="subtitle1" gutterBottom>Pulse Rate vs Time (PPI){getProgressText(null)}</Typography>
-                    <div id="adv-chart-ppi" ref={chart2Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
                 </Paper>
             )}
         </Box>

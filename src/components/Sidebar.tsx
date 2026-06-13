@@ -472,9 +472,8 @@ const Sidebar = () => {
                 {activeTab === 'advanced' && (
                     <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, overflowY: 'auto' }}>
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.rawPleth} onChange={() => actions.toggleAdvancedChart('rawPleth')} />} label="Raw PLETH Waveform" />
+                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.ecg} onChange={() => actions.toggleAdvancedChart('ecg')} />} label="Raw ECG Waveform" />
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.resp} onChange={() => actions.toggleAdvancedChart('resp')} />} label="Respiration Waveform" />
-                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.ppi} onChange={() => actions.toggleAdvancedChart('ppi')} />} label="PPI Plot" />
-                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.overlay} onChange={() => actions.toggleAdvancedChart('overlay')} />} label="Derived Parameters Overlay" />
                     </Box>
                 )}
             </Box>

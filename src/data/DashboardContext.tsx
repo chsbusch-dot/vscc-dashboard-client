@@ -47,9 +47,8 @@ export interface DashboardState {
     selectedPhysioIds: Record<PhysioId, boolean>;
     advancedCharts: {
         rawPleth: boolean;
+        ecg: boolean;
         resp: boolean;
-        ppi: boolean;
-        overlay: boolean;
     };
 }
 
@@ -111,7 +110,7 @@ const initialState: DashboardState = {
     mqttBrokerUrl: `ws://${VSCC_HOST}:8083/mqtt`,
     globalWaveformToggles: {
         VitalSigns: true,
-        ECG: false,
+        ECG: true,
         Pleth: true,
         Resp: true,
     },
@@ -144,7 +143,7 @@ const initialState: DashboardState = {
         acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_PLETH', 'NOM_RESP'].includes(key);
         return acc;
     }, {} as Record<PhysioId, boolean>),
-    advancedCharts: { rawPleth: true, resp: true, ppi: false, overlay: false },
+    advancedCharts: { rawPleth: true, ecg: true, resp: true },
 };
 
 const dashboardReducer = (prev: DashboardState, action: Partial<DashboardState>): DashboardState => {

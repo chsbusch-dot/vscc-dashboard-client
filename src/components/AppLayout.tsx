@@ -173,13 +173,12 @@ const AppLayout = () => {
                     </Box>
                 )}
 
-                {(state.advancedCharts.rawPleth || state.advancedCharts.resp || state.advancedCharts.ppi || state.advancedCharts.overlay) && (
+                {(state.advancedCharts.rawPleth || state.advancedCharts.ecg || state.advancedCharts.resp) && (
                     <AdvancedCharts
                         verticalGroup={verticalGroup}
                         showRawPleth={state.advancedCharts.rawPleth}
+                        showEcg={state.advancedCharts.ecg}
                         showResp={state.advancedCharts.resp}
-                        showPpi={state.advancedCharts.ppi}
-                        showOverlay={state.advancedCharts.overlay}
                     />
                 )}
             </Box>
