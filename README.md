@@ -153,9 +153,11 @@ npm install scichart@latest && npm install
 
 ## ⚖️ HIPAA Compliance Disclaimer
 
-This system is architected to process medical telemetry containing **electronic Protected Health Information (ePHI)**.
+This system processes medical telemetry that may contain **electronic Protected Health Information (ePHI)**.
 
-While the software contains controls to support **HIPAA compliance**, deploying this code does not automatically guarantee compliance. Users are strictly responsible for:
-* Configuring secure infrastructure and encryption at rest/in transit.
-* Disabling verbose console logging (`console.log`) in production to prevent leaking raw physiological payloads.
+**This software does not contain any controls to support HIPAA compliance** — it provides no authentication, access control, audit logging, or encryption (in transit or at rest). Running it does **not** make a deployment HIPAA-compliant. Operators are solely responsible for:
+* Secure infrastructure — encryption in transit and at rest, network isolation, access control, and audit logging.
+* Disabling verbose console logging (`console.log`) in production so raw physiological payloads are never leaked.
 * Executing their own Business Associate Agreements (BAAs) with hosting providers.
+
+Research and education use only — not a medical device.
