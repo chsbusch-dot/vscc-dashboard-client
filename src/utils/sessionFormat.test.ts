@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatCount, formatDuration, formatBytes, signalDisplayLabel } from './sessionFormat';
+import { formatCount, formatDuration, formatBytes, isCommunitySignal, signalDisplayLabel } from './sessionFormat';
 
 describe('formatCount', () => {
     it('keeps small values as-is', () => {
@@ -63,6 +63,26 @@ describe('formatBytes', () => {
     it('returns -- for invalid input', () => {
         expect(formatBytes(-1)).toBe('--');
         expect(formatBytes(Number.NaN)).toBe('--');
+    });
+});
+
+describe('isCommunitySignal', () => {
+    it('keeps MMS numeric ids (PHYSIO_META)', () => {
+        expect(isCommunitySignal('NOM_PULS_OXIM_SAT_O2')).toBe(true);
+        expect(isCommunitySignal('NOM_ECG_CARD_BEAT_RATE')).toBe(true);
+        expect(isCommunitySignal('NOM_RESP_RATE')).toBe(true);
+    });
+
+    it('keeps MMS waveform ids (Pleth / ECG / Resp)', () => {
+        expect(isCommunitySignal('NOM_PLETH')).toBe(true);
+        expect(isCommunitySignal('NOM_ECG_ELEC_POTL_II')).toBe(true);
+        expect(isCommunitySignal('NOM_RESP')).toBe(true);
+    });
+
+    it('drops non-MMS ids still left in the database (EEG / BIS)', () => {
+        expect(isCommunitySignal('NOM_EEG_ELEC_POTL_CRTX')).toBe(false);
+        expect(isCommunitySignal('NOM_EEG_BIS_SIG_QUAL_INDEX')).toBe(false);
+        expect(isCommunitySignal('NOM_EEG_BISPECTRAL_INDEX')).toBe(false);
     });
 });
 

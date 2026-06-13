@@ -9,6 +9,83 @@ import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../ut
 
 import * as SciChart from "scichart";
 
+/** Aggregation bucket width in seconds for the live trend view; 0 = raw (no binning). */
+const bucketSecondsFor = (agg: 'raw' | '1min' | '5min'): number =>
+    agg === '1min' ? 60 : agg === '5min' ? 300 : 0;
+
+/**
+ * Raw passthrough that re-inserts the same >gapSec NaN line-breaks the incremental
+ * append path draws, so rebuilding a series from the buffer (e.g. switching back to
+ * RT) reproduces signal-dropout gaps instead of connecting straight across them.
+ */
+const rawWithGapBreaks = (
+    x: number[],
+    y: (number | null)[],
+    gapSec = 2,
+): { gx: number[]; gy: number[] } => {
+    const gx: number[] = [];
+    const gy: number[] = [];
+    let lastX = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < x.length; i++) {
+        const cx = x[i];
+        if (lastX !== Number.NEGATIVE_INFINITY && cx - lastX > gapSec) {
+            gx.push(cx - 0.001);
+            gy.push(Number.NaN);
+        }
+        gx.push(cx);
+        gy.push(y[i] === null ? Number.NaN : (y[i] as number));
+        lastX = cx;
+    }
+    return { gx, gy };
+};
+
+/**
+ * Bins a raw (x in epoch seconds, y) numeric trend into fixed-width time-bucket
+ * averages for the live aggregation view. Each bucket is plotted at its start;
+ * a NaN point is inserted across skipped buckets so the line breaks over gaps.
+ * Only low-frequency numeric trends pass through here — waveforms are never binned.
+ */
+const binSeries = (
+    x: number[],
+    y: (number | null)[],
+    bucketSec: number,
+): { bx: number[]; by: number[] } => {
+    const bx: number[] = [];
+    const by: number[] = [];
+    let curIdx = Number.NaN;
+    let sum = 0;
+    let cnt = 0;
+    let lastIdx = Number.NaN;
+    const flush = () => {
+        if (cnt === 0) return;
+        if (!Number.isNaN(lastIdx) && curIdx - lastIdx > 1) {
+            bx.push((lastIdx + 1) * bucketSec);
+            by.push(Number.NaN); // break the line across empty buckets
+        }
+        // Plot at the bucket CENTER so the newest bin sits near the live right
+        // edge (start-of-bucket would lag a full bucket behind and fall off-screen).
+        bx.push(curIdx * bucketSec + bucketSec / 2);
+        by.push(sum / cnt);
+        lastIdx = curIdx;
+    };
+    for (let i = 0; i < x.length; i++) {
+        const idx = Math.floor(x[i] / bucketSec);
+        if (idx !== curIdx) {
+            flush();
+            curIdx = idx;
+            sum = 0;
+            cnt = 0;
+        }
+        const v = y[i];
+        if (v !== null && !Number.isNaN(v)) {
+            sum += v;
+            cnt++;
+        }
+    }
+    flush();
+    return { bx, by };
+};
+
 interface ChartContainerProps {
     groupName: string;
     physioIds: PhysioId[];
@@ -37,6 +114,16 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     const timeDisplayRef = useRef(state.timeDisplay);
     timeDisplayRef.current = state.timeDisplay;
 
+    // Aggregation + data-source read via refs so the imperative data subscription
+    // can react to slider/source changes without being torn down and re-created.
+    const aggregationRef = useRef(state.aggregation);
+    aggregationRef.current = state.aggregation;
+    const dataSourceRef = useRef(state.dataSource);
+    dataSourceRef.current = state.dataSource;
+    // Set when live binned-mode data arrives; the refresh timer rebuilds the
+    // aggregated series from the raw buffer on its next tick.
+    const binnedDirtyRef = useRef(false);
+
     // Use the custom hook for initialization and lifecycle management
     const { sciChartSurface: surface, wasmContext } = useSciChart(divElementId);
 
@@ -49,6 +136,32 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     const [isSignalLost, setIsSignalLost] = useState(false);
     const isSignalLostRef = useRef(false);
     const lastChartDataReceivedAtRef = useRef<number>(0);
+
+    // Rebuild every series for this chart from the raw buffer, applying the current
+    // live aggregation (raw passthrough, or 1-/5-min averages). Sessions (upload)
+    // and the raw setting render every sample; only live numeric trends are binned.
+    const rebuildAllSeries = () => {
+        if (!surface) return;
+        const ds = dataSourceRef.current;
+        const live = ds === 'mqtt' || ds === 'websocket' || ds === 'url';
+        const bucketSec = live ? bucketSecondsFor(aggregationRef.current) : 0;
+        surface.suspendUpdates();
+        physioIdsRef.current.forEach(id => {
+            const series = dataSeriesRefs.current[id];
+            if (!series) return;
+            series.clear();
+            const raw = dataRef.current[id];
+            if (!raw || raw.x.length === 0) return;
+            if (bucketSec === 0) {
+                const { gx, gy } = rawWithGapBreaks(raw.x, raw.y);
+                series.appendRange(gx, gy);
+            } else {
+                const { bx, by } = binSeries(raw.x, raw.y, bucketSec);
+                if (bx.length > 0) series.appendRange(bx, by);
+            }
+        });
+        surface.resumeUpdates();
+    };
 
     // Update the visible stats on a throttled interval to reduce UI flicker and render cost.
     useEffect(() => {
@@ -248,11 +361,19 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 isSignalLostRef.current = false;
                 setIsSignalLost(false);
                 lastChartDataReceivedAtRef.current = Date.now();
+                binnedDirtyRef.current = false;
                 return;
             }
 
             const records = data;
             if (state.status === 'Paused') return;
+
+            // Live numeric trends are aggregated by rebuilding from the raw buffer
+            // (see the refresh timer below); raw mode and sessions append directly.
+            const ds = dataSourceRef.current;
+            const liveBinned =
+                (ds === 'mqtt' || ds === 'websocket' || ds === 'url') &&
+                aggregationRef.current !== 'raw';
 
             surface.suspendUpdates();
 
@@ -287,17 +408,21 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             // Apply updates to SciChart
             Object.entries(updates).forEach(([id, data]) => {
                 const series = dataSeriesRefs.current[id as PhysioId];
-                if (series) {
+                if (!series) return;
+
+                // Append raw points incrementally — skipped in live binned mode,
+                // where the refresh timer rebuilds the aggregated series instead.
+                if (!liveBinned) {
                     // 1. Get the very last timestamp currently on the chart
                     const count = series.count();
                     let lastX = count > 0 ? series.getNativeXValues().get(count - 1) : -Infinity;
-                    
+
                     // 2. Only push points that are NEWER than the last timestamp
                     const newX: number[] = [];
                     const newY: number[] = [];
                     for (let i = 0; i < data.x.length; i++) {
                         let currentX = data.x[i];
-                        
+
                         if (currentX <= lastX) {
                             if (lastX - currentX < 1.0) {
                                 currentX = lastX + 0.010; // Un-bunch VSCapture duplicate packet timestamps
@@ -311,7 +436,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                             newX.push(currentX - 0.001); // Append NaN just before new point
                             newY.push(Number.NaN);
                         }
-                        
+
                         newX.push(currentX);
                         newY.push(data.y[i]);
                         lastX = currentX;
@@ -321,37 +446,42 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                     if (newX.length > 0) {
                         series.appendRange(newX, newY);
                     }
-                    // 4. Update Stats (Incremental, ignoring NaNs)
-                    const stats = runningStatsRef.current[id] || { min: Infinity, max: -Infinity, sum: 0, count: 0 };
-                    for (const val of data.y) {
-                        if (!Number.isNaN(val)) {
-                            if (val < stats.min) stats.min = val;
-                            if (val > stats.max) stats.max = val;
-                            stats.sum += val;
-                            stats.count++;
-                        }
-                    }
-                    runningStatsRef.current[id] = stats;
-
-                    // Update Latest Stats Ref for UI
-                    let lastValue = Number.NaN;
-                    for (let i = data.y.length - 1; i >= 0; i--) {
-                        if (!Number.isNaN(data.y[i])) {
-                            lastValue = data.y[i];
-                            break;
-                        }
-                    }
-                    
-                    const avg = stats.count > 0 ? stats.sum / stats.count : NaN;
-
-                    latestStatsRef.current[id] = {
-                        current: !isNaN(lastValue) ? lastValue.toFixed(2) : 'N/A',
-                        min: stats.min !== Infinity ? stats.min.toFixed(2) : 'N/A',
-                        max: stats.max !== -Infinity ? stats.max.toFixed(2) : 'N/A',
-                        avg: !isNaN(avg) ? avg.toFixed(2) : 'N/A'
-                    };
                 }
+
+                // 4. Update Stats (Incremental, ignoring NaNs) — always from raw values
+                const stats = runningStatsRef.current[id] || { min: Infinity, max: -Infinity, sum: 0, count: 0 };
+                for (const val of data.y) {
+                    if (!Number.isNaN(val)) {
+                        if (val < stats.min) stats.min = val;
+                        if (val > stats.max) stats.max = val;
+                        stats.sum += val;
+                        stats.count++;
+                    }
+                }
+                runningStatsRef.current[id] = stats;
+
+                // Update Latest Stats Ref for UI
+                let lastValue = Number.NaN;
+                for (let i = data.y.length - 1; i >= 0; i--) {
+                    if (!Number.isNaN(data.y[i])) {
+                        lastValue = data.y[i];
+                        break;
+                    }
+                }
+
+                const avg = stats.count > 0 ? stats.sum / stats.count : NaN;
+
+                latestStatsRef.current[id] = {
+                    current: !isNaN(lastValue) ? lastValue.toFixed(2) : 'N/A',
+                    min: stats.min !== Infinity ? stats.min.toFixed(2) : 'N/A',
+                    max: stats.max !== -Infinity ? stats.max.toFixed(2) : 'N/A',
+                    avg: !isNaN(avg) ? avg.toFixed(2) : 'N/A'
+                };
             });
+
+            // In live binned mode, mark the raw buffer dirty so the refresh timer
+            // re-bins on its next tick (cheap: numeric trends only).
+            if (liveBinned) binnedDirtyRef.current = true;
 
             // Rule 4: Global Auto-Scroll
             if (maxTimestamp > 0) {
@@ -361,7 +491,10 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 if (state.autoScroll && state.dataSource !== 'mqtt' && state.dataSource !== 'websocket') {
                     const xAxis = surface.xAxes.get(0);
                     if (xAxis) {
-                        const window = state.timeWindow * 60;
+                        // URL polling is binnable (live); sessions render server-aggregated
+                        // data raw. Floor the window to a few buckets when binning.
+                        const bs = state.dataSource === 'url' ? bucketSecondsFor(aggregationRef.current) : 0;
+                        const window = Math.max(state.timeWindow * 60, bs * 3);
                         xAxis.visibleRange = new SciChart.NumberRange(maxTimestamp - window, maxTimestamp);
                     }
                 }
@@ -373,8 +506,34 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         return () => {
             unsubscribe();
         };
-     
+
     }, [surface, state.status, state.autoScroll, state.timeWindow, subscribeToData]);
+
+    // Re-bin every series when the aggregation slider (or data source) changes, so
+    // switching RT / 1m / 5m takes effect immediately on the already-plotted data.
+    // physioIdsStr is a dependency so a fresh series set is filled at the right
+    // resolution right after the configure-series effect recreates it.
+    useEffect(() => {
+        rebuildAllSeries();
+        binnedDirtyRef.current = false;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [surface, wasmContext, physioIdsStr, state.aggregation, state.dataSource]);
+
+    // While live and aggregating, refresh the binned series from the raw buffer on
+    // a slow tick. Raw mode and sessions use the incremental append path instead.
+    useEffect(() => {
+        if (!surface) return;
+        const intervalId = window.setInterval(() => {
+            const ds = dataSourceRef.current;
+            const live = ds === 'mqtt' || ds === 'websocket' || ds === 'url';
+            if (live && aggregationRef.current !== 'raw' && binnedDirtyRef.current) {
+                binnedDirtyRef.current = false;
+                rebuildAllSeries();
+            }
+        }, 1000);
+        return () => window.clearInterval(intervalId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [surface]);
 
     // Effect for continuous smooth scrolling in live modes (MQTT/WS)
     // Keeps the X-axis moving forward even if the signal is lost.
@@ -393,8 +552,11 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             if (lastDataRef.current) {
                 const elapsedSeconds = (now - lastDataRef.current.receivedAt) / 1000;
                 const virtualMax = lastDataRef.current.timestamp + elapsedSeconds;
-                const timeWindowSeconds = state.timeWindow * 60;
-                
+                // Keep at least ~3 buckets in view while aggregating so a binned
+                // trend is never squeezed down to a single off-screen point.
+                const bs = bucketSecondsFor(aggregationRef.current);
+                const timeWindowSeconds = Math.max(state.timeWindow * 60, bs * 3);
+
                 xAxis.visibleRange = new SciChart.NumberRange(virtualMax - timeWindowSeconds, virtualMax);
             }
             

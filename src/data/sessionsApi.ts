@@ -197,9 +197,19 @@ export const patchSession = (
     payload: { label?: string; subject_code?: string; notes?: string }
 ): Promise<SessionInfo> => request<SessionInfo>(`/api/sessions/${id}`, jsonInit('PATCH', payload));
 
-/** GET /api/sessions/{id}/data */
-export const fetchSessionData = (id: number): Promise<SessionDataResponse> =>
-    request<SessionDataResponse>(`/api/sessions/${id}/data`);
+/**
+ * GET /api/sessions/{id}/data — optional `agg` selects the replay resolution:
+ * '1min'/'5min' force time-bucket averages; omitting it (or 'raw') uses the
+ * backend's span-aware default (raw for short spans, 1-min for long ones), which
+ * keeps very long sessions from loading millions of raw samples.
+ */
+export const fetchSessionData = (
+    id: number,
+    agg?: 'raw' | '1min' | '5min'
+): Promise<SessionDataResponse> =>
+    request<SessionDataResponse>(
+        `/api/sessions/${id}/data${agg === '1min' || agg === '5min' ? `?agg=${agg}` : ''}`
+    );
 
 /** POST /api/sessions/{id}/export */
 export const exportSession = (id: number): Promise<ExportSessionResult> =>

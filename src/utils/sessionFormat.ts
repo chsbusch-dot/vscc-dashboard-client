@@ -15,6 +15,29 @@ export const signalDisplayLabel = (physioId: string): string =>
     SIGNAL_META[physioId]?.name ?? physioId;
 
 /**
+ * MMS waveform physio_ids the community edition renders (PHYSIO_META holds only
+ * numerics, so waveforms need their own allowlist). Mirrors the waveform ids in
+ * utils/colors.ts.
+ */
+const COMMUNITY_WAVEFORM_IDS = new Set<string>([
+    'NOM_PLETH',
+    'NOM_ECG_ELEC_POTL_II',
+    'NOM_ECG_ELEC_POTL_I',
+    'NOM_ECG_ELEC_POTL_V',
+    'NOM_RESP',
+    'NOM_IMPED_TTHOR',
+]);
+
+/**
+ * Whether a physio_id belongs to the MMS-only community edition. Used to keep
+ * non-MMS signals still physically present in the database (e.g. EEG/BIS channels
+ * from earlier captures) out of the session signal legend. Display-only filter —
+ * ingestion and storage are unaffected.
+ */
+export const isCommunitySignal = (physioId: string): boolean =>
+    physioId in PHYSIO_META || COMMUNITY_WAVEFORM_IDS.has(physioId);
+
+/**
  * Formats a duration given in seconds as a compact human string,
  * e.g. 42 -> "42s", 330 -> "5m 30s", 11100 -> "3h 05m".
  */

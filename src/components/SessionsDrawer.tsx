@@ -43,7 +43,7 @@ import {
     type SessionInfo,
     type SessionSignals,
 } from '../data/sessionsApi';
-import { formatDuration, signalDisplayLabel } from '../utils/sessionFormat';
+import { formatDuration, isCommunitySignal, signalDisplayLabel } from '../utils/sessionFormat';
 import { formatFullTime, type TimeDisplayMode } from '../utils/timeFormat';
 
 const LIST_POLL_INTERVAL_MS = 10000;
@@ -235,24 +235,28 @@ const SessionRow: React.FC<SessionRowProps> = ({
                     </Tooltip>
                 </Stack>
             </Stack>
-            {signals != null && (
-                signals.numerics.length === 0 && signals.waveforms.length === 0 ? (
+            {signals != null && (() => {
+                // Community edition is MMS-only: keep non-MMS ids (e.g. EEG/BIS rows
+                // still in the database from earlier captures) out of the legend.
+                const numerics = signals.numerics.filter(isCommunitySignal);
+                const waveforms = signals.waveforms.filter(isCommunitySignal);
+                return numerics.length === 0 && waveforms.length === 0 ? (
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
                         no data yet
                     </Typography>
                 ) : (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.75 }}>
-                        {signals.numerics.map(id => (
+                        {numerics.map(id => (
                             <Chip key={`n-${id}`} label={signalDisplayLabel(id)} size="small" sx={signalChipSx} />
                         ))}
-                        {signals.waveforms.map(id => (
+                        {waveforms.map(id => (
                             <Tooltip key={`w-${id}`} title={`${signalDisplayLabel(id)} (wave)`}>
                                 <Chip label={signalDisplayLabel(id)} size="small" variant="outlined" sx={signalChipSx} />
                             </Tooltip>
                         ))}
                     </Box>
-                )
-            )}
+                );
+            })()}
             <Divider sx={{ mt: 1.5 }} />
         </Box>
     );
@@ -354,7 +358,7 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
             actions.clearData();
             actions.setAutoScroll(true);
 
-            const data = await fetchSessionData(session.id);
+            const data = await fetchSessionData(session.id, state.aggregation);
             const records: TelemetryRecord[] = [...data.numerics, ...data.waveforms]
                 .filter(r => r && typeof r.time === 'number' && !!r.physio_id)
                 .map(r => ({
@@ -372,8 +376,9 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
             }
 
             actions.setStatus('Ready');
+            const aggLabel = state.aggregation === '5min' ? '5-min' : '1-min';
             const note = data.aggregated_waveforms
-                ? `Loaded session #${session.id} • waveforms averaged to 1-min for this span`
+                ? `Loaded session #${session.id} • waveforms averaged to ${aggLabel} for this view`
                 : `Loaded session #${session.id}`;
             actions.setStatusNote(note);
             showSnack({
@@ -421,7 +426,11 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
     const handleNewSession = async () => {
         setCreatingSession(true);
         try {
-            const created = await createSession();
+            // Default the label to the browser's LOCAL wall-clock time. The server
+            // would otherwise stamp it in UTC (it cannot know the operator's zone);
+            // formatFullTime('local') gives "YYYY-MM-DD HH:MM:SS" — trim to minutes.
+            const stamp = formatFullTime(Date.now() / 1000, 'local').slice(0, 16);
+            const created = await createSession(`Session ${stamp}`);
             showSnack({ severity: 'success', message: `Recording into session #${created.id}` });
             await refresh();
         } catch (err) {
