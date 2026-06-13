@@ -262,6 +262,7 @@ const Sidebar = () => {
     
     const handleStop = () => {
         stopAllStreams();
+        actions.clearData();        // blank the charts — Stop means stop, not "freeze on stale data"
         actions.setStatus('Ready');
         actions.setReplayProgress(0);
         setActiveMode(null);
@@ -475,6 +476,7 @@ const Sidebar = () => {
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.ppi} onChange={() => actions.toggleAdvancedChart('ppi')} />} label="PPI Plot" />
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.overlay} onChange={() => actions.toggleAdvancedChart('overlay')} />} label="Derived Parameters Overlay" />
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.spectrogram} onChange={() => actions.toggleAdvancedChart('spectrogram')} />} label="Spectrogram" />
+                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.anomaly} onChange={() => actions.toggleAdvancedChart('anomaly')} />} label="Anomaly Monitor (z-score)" />
                     </Box>
                 )}
             </Box>

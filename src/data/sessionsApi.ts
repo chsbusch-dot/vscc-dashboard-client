@@ -181,8 +181,8 @@ export const fetchSessionSignals = (id: number): Promise<SessionSignals> =>
  * set by the server). Packages can be several GB, so navigate the browser to
  * this URL for a native download — never fetch it into memory.
  */
-export const sessionDownloadUrl = (id: number): string =>
-    `${API_BASE}/api/sessions/${id}/download`;
+export const sessionDownloadUrl = (id: number, deidentify = false): string =>
+    `${API_BASE}/api/sessions/${id}/download${deidentify ? '?deidentify=1' : ''}`;
 
 /**
  * URL of GET /api/sessions/download-all — every session's package in one

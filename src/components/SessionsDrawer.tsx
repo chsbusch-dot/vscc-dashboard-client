@@ -12,9 +12,11 @@ import {
     DialogTitle,
     Divider,
     Drawer,
+    FormControlLabel,
     IconButton,
     Snackbar,
     Stack,
+    Switch,
     TextField,
     Tooltip,
     Typography,
@@ -403,6 +405,9 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
         }
     };
 
+    // De-identified ("share-safe") downloads: relative timestamps, no label/notes.
+    const [deid, setDeid] = useState(false);
+
     // Same native-download pattern for the everything-zip.
     const handleDownloadAll = () => {
         const anchor = document.createElement('a');
@@ -419,7 +424,7 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
 
     const handleDownload = (session: SessionInfo) => {
         const anchor = document.createElement('a');
-        anchor.href = sessionDownloadUrl(session.id);
+        anchor.href = sessionDownloadUrl(session.id, deid);
         anchor.download = '';
         document.body.appendChild(anchor);
         anchor.click();
@@ -510,6 +515,14 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
                             Download all
                         </Button>
                     </Stack>
+
+                    <FormControlLabel
+                        sx={{ ml: 0, mb: 0.5 }}
+                        control={<Switch size="small" checked={deid} onChange={(e) => setDeid(e.target.checked)} />}
+                        label={<Typography variant="caption" color="text.secondary">
+                            De-identified downloads (relative time, no labels)
+                        </Typography>}
+                    />
 
                     {listError && <Alert severity="error" sx={{ mb: 1 }}>{listError}</Alert>}
 

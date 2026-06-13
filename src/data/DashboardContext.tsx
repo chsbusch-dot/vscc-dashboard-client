@@ -51,6 +51,7 @@ export interface DashboardState {
         ppi: boolean;
         overlay: boolean;
         spectrogram: boolean;
+        anomaly: boolean;
     };
 }
 
@@ -75,6 +76,8 @@ export interface DashboardActions {
     selectAll: () => void;
     deselectAll: () => void;
     toggleAdvancedChart: (chart: keyof DashboardState['advancedCharts']) => void;
+    /** Apply a saved view layout (which charts/channels are shown + view settings) in one update. */
+    applyLayout: (layout: Partial<DashboardState>) => void;
     appendData: (records: TelemetryRecord[]) => void;
     clearData: () => void;
 }
@@ -147,7 +150,7 @@ const initialState: DashboardState = {
         acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_PLETH', 'NOM_RESP'].includes(key);
         return acc;
     }, {} as Record<PhysioId, boolean>),
-    advancedCharts: { rawPleth: true, resp: true, ppi: false, overlay: false, spectrogram: false },
+    advancedCharts: { rawPleth: true, resp: true, ppi: false, overlay: false, spectrogram: false, anomaly: false },
 };
 
 const dashboardReducer = (prev: DashboardState, action: Partial<DashboardState>): DashboardState => {
@@ -206,6 +209,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             dispatch({ selectedPhysioIds: allIds });
         },
         toggleAdvancedChart: (chart) => dispatch({ advancedCharts: { ...state.advancedCharts, [chart]: !state.advancedCharts[chart] } }),
+        applyLayout: (layout) => dispatch(layout),
         appendData: (records: TelemetryRecord[]) => {
             if (records.length === 0) return;
             records.forEach(r => {
