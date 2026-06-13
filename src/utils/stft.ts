@@ -46,6 +46,23 @@ export function binToFreq(bin: number, fftSize: number, fs: number): number {
 }
 
 /**
+ * Centered moving-average over `w` bins — trades spectral resolution for lower
+ * variance (the "smoothing" a clinical spectrogram applies to reach ~1 Hz
+ * resolution from a finer FFT). w ≤ 1 returns the input unchanged.
+ */
+export function movingAverage(arr: Float64Array, w: number): Float64Array {
+    if (w <= 1) return arr;
+    const out = new Float64Array(arr.length);
+    const half = Math.floor(w / 2);
+    for (let i = 0; i < arr.length; i++) {
+        let s = 0, n = 0;
+        for (let j = Math.max(0, i - half); j <= Math.min(arr.length - 1, i + half); j++) { s += arr[j]; n++; }
+        out[i] = s / n;
+    }
+    return out;
+}
+
+/**
  * One-sided power spectrum of the most recent `fftSize` samples: mean-removed,
  * Hann-windowed, |FFT|². Returns power for bins 0..fftSize/2.
  */

@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { fft, hann, powerSpectrum, bandPowers, spectralEdge, binToFreq } from './stft';
+import { fft, hann, powerSpectrum, bandPowers, spectralEdge, binToFreq, movingAverage } from './stft';
+
+describe('movingAverage', () => {
+    it('preserves a flat signal and conserves total energy', () => {
+        const flat = Float64Array.from([5, 5, 5, 5, 5]);
+        expect(Array.from(movingAverage(flat, 3))).toEqual([5, 5, 5, 5, 5]);
+        const spike = Float64Array.from([0, 0, 9, 0, 0]);
+        const sm = movingAverage(spike, 3);
+        expect(sm[2]).toBeLessThan(9);            // spike spread out
+        expect(sm[1]).toBeGreaterThan(0);
+        const sum = (a: Float64Array) => a.reduce((s, v) => s + v, 0);
+        expect(sum(sm)).toBeCloseTo(sum(spike), 5); // interior energy conserved
+    });
+    it('w<=1 is a no-op', () => {
+        const a = Float64Array.from([1, 2, 3]);
+        expect(movingAverage(a, 1)).toBe(a);
+    });
+});
 
 describe('fft', () => {
     it('transforms a DC signal to a single bin', () => {

@@ -1,15 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Paper, Stack, Typography, Chip, Tooltip } from '@mui/material';
 import { useDashboard } from '../data/DashboardContext';
-import { hann, powerSpectrum, bandPowers, spectralEdge, EEG_BANDS } from '../utils/stft';
+import { hann, powerSpectrum, bandPowers, spectralEdge, movingAverage, EEG_BANDS } from '../utils/stft';
 
 const EEG_ID = 'NOM_EEG_ELEC_POTL_CRTX';
 const FS = 128;          // EEG sample rate (Hz)
-const FFT = 256;         // window length → 0.5 Hz resolution, 2 s window
-const HOP_MS = 1000;     // one spectrogram column per second
-const F_MAX = 30;        // display 0–30 Hz (δ/θ/α/β)
+const FFT = 512;         // 4 s window @128 Hz (0.25 Hz bins, smoothed to ~1 Hz)
+const SMOOTH_BINS = 4;   // ~1 Hz spectral resolution (the clinical ICU sweet spot)
+const HOP_MS = 1000;     // one column / second (temporal resolution ~1 s)
+const F_MAX = 20;        // display 0–20 Hz (clinical EEG background range)
 const COLS = 180;        // ~3 min of history
-const DYN_DB = 4;        // colour dynamic range, decades of power
+const DYN_DB = 35;       // colour dynamic range, dB below the window max
 
 const BAND_COLORS: Record<string, string> = {
     delta: '#1976D2', theta: '#2E7D32', alpha: '#F57C00', beta: '#D32F2F',
@@ -17,11 +18,11 @@ const BAND_COLORS: Record<string, string> = {
 
 interface Column { power: Float64Array; sef: number; bands: Record<string, number>; }
 
-/** Perceptual blue→cyan→green→yellow→red ramp for the heatmap. */
+/** Clinical density-spectral-array ramp (low → high power): navy → blue → green → yellow → red. */
 function colormap(t: number): [number, number, number] {
     const stops: Array<[number, [number, number, number]]> = [
-        [0.0, [25, 25, 80]], [0.35, [20, 130, 170]], [0.6, [60, 190, 90]],
-        [0.8, [240, 210, 50]], [1.0, [210, 50, 40]],
+        [0.0, [15, 15, 70]], [0.25, [25, 90, 180]], [0.5, [40, 175, 95]],
+        [0.72, [235, 220, 45]], [1.0, [200, 35, 35]],
     ];
     for (let i = 1; i < stops.length; i++) {
         if (t <= stops[i][0]) {
@@ -87,8 +88,8 @@ const SpectrogramChart: React.FC = () => {
         const tick = () => {
             if (samplesRef.current.length < FFT) { setLive(false); return; }
             setLive(true);
-            const power = powerSpectrum(samplesRef.current, FFT, winRef.current);
-            const col: Column = { power, sef: spectralEdge(power, FFT, FS), bands: bandPowers(power, FFT, FS) };
+            const power = movingAverage(powerSpectrum(samplesRef.current, FFT, winRef.current), SMOOTH_BINS);
+            const col: Column = { power, sef: spectralEdge(power, FFT, FS, 0.95, F_MAX), bands: bandPowers(power, FFT, FS) };
             colsRef.current.push(col);
             if (colsRef.current.length > COLS) colsRef.current.shift();
             setLatest(col);
@@ -118,20 +119,20 @@ const SpectrogramChart: React.FC = () => {
         const hx = padL, hy = 0, hw = W - padL, hh = Math.max(20, H - padB - bandH);
         const freqBins = kMax + 1;
 
-        // Normalise log-power across the visible window.
-        let maxLP = -Infinity;
+        // Normalise power in dB across the visible window.
+        let maxDB = -Infinity;
         for (const c of cols) for (let k = 0; k <= kMax; k++) {
-            const lp = Math.log10(c.power[k] + 1e-9);
-            if (lp > maxLP) maxLP = lp;
+            const db = 10 * Math.log10(c.power[k] + 1e-9);
+            if (db > maxDB) maxDB = db;
         }
-        const minLP = maxLP - DYN_DB;
-        const span = maxLP - minLP || 1;
+        const minDB = maxDB - DYN_DB;
+        const span = DYN_DB || 1;
 
         // Heatmap → ImageData(cols × freqBins), low freq at the bottom.
         const img = ctx.createImageData(cols.length, freqBins);
         for (let c = 0; c < cols.length; c++) {
             for (let b = 0; b <= kMax; b++) {
-                const t = Math.max(0, Math.min(1, (Math.log10(cols[c].power[b] + 1e-9) - minLP) / span));
+                const t = Math.max(0, Math.min(1, (10 * Math.log10(cols[c].power[b] + 1e-9) - minDB) / span));
                 const [r, g, bl] = colormap(t);
                 const idx = ((freqBins - 1 - b) * cols.length + c) * 4;
                 img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = bl; img.data[idx + 3] = 255;
@@ -156,7 +157,7 @@ const SpectrogramChart: React.FC = () => {
 
         // Frequency axis.
         ctx.fillStyle = '#555'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
-        for (const f of [0, 10, 20, 30]) {
+        for (const f of [0, 10, 20]) {
             const y = hy + hh * (1 - f / F_MAX);
             ctx.fillText(String(f), padL - 4, Math.min(hh - 1, Math.max(8, y + 3)));
         }
@@ -210,7 +211,7 @@ const SpectrogramChart: React.FC = () => {
                 )}
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-                STFT of {EEG_ID} · {FFT}-pt Hann @ {FS} Hz · research/education only
+                STFT of {EEG_ID} · {FFT}-pt Hann @ {FS} Hz (4 s, ~1 Hz, dB) · research/education only
             </Typography>
         </Paper>
     );
