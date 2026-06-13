@@ -26,8 +26,7 @@ MQTT (EMQX) + TimescaleDB stack built around
 patient-monitor capture tool by John George K. The backend's installer downloads
 the latest VSCapture automatically; no separate setup is needed.
 
-<!-- TODO: screenshot pending regeneration for the MMS-only edition — restore once captured:
-![MP50 Vital Sign Dashboard](docs/screenshots/dashboard-full.png) -->
+![MP50 Vital Sign Dashboard](docs/screenshots/dashboard-full.png)
 
 ---
 
@@ -56,8 +55,7 @@ the latest VSCapture automatically; no separate setup is needed.
 
 ### Waveforms & numerics
 
-<!-- TODO: screenshot pending regeneration for the MMS-only edition — restore once captured:
-![Waveform and numeric charts](docs/screenshots/chart-grid.png) -->
+![Waveform and numeric charts](docs/screenshots/chart-grid.png)
 
 > The screenshots above show SpO₂ and pulse trends, a raw plethysmograph pulse waveform, and a
 > respiration trace from recorded MP50 data.
