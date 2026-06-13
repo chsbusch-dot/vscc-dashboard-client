@@ -14,30 +14,37 @@ interface AdvancedChartsProps {
     showSpectrogram: boolean;
 }
 
-// Utility to safely append only newer, strictly increasing points to avoid SciChart sorting exceptions
-const appendSafe = (series: SciChart.XyDataSeries | undefined, xArr: number[], yArr: (number | null)[]) => {
-    if (!series) return;
+/** A signal-loss interval [start, end] in epoch seconds, used for gap shading. */
+interface Gap { start: number; end: number; }
+
+// Utility to safely append only newer, strictly increasing points to avoid SciChart sorting exceptions.
+// Returns the >2 s gaps it detected so the caller can shade them on the trace.
+const appendSafe = (series: SciChart.XyDataSeries | undefined, xArr: number[], yArr: (number | null)[]): Gap[] => {
+    const gaps: Gap[] = [];
+    if (!series) return gaps;
     const count = series.count();
     let lastX = count > 0 ? series.getNativeXValues().get(count - 1) : -Infinity;
     const newX: number[] = [];
     const newY: number[] = [];
-    
+
     for (let i = 0; i < xArr.length; i++) {
         let x = xArr[i];
-        
+
         if (x <= lastX) {
             if (lastX - x < 1.0) {
                 // VSCapture outputs multiple points per packet with the identical timestamp.
-                // We space them out by ~10ms (assuming ~100Hz standard waveform rate) 
+                // We space them out by ~10ms (assuming ~100Hz standard waveform rate)
                 // to reconstruct the continuous signal and satisfy SciChart's strict ascending rule.
-                x = lastX + 0.010; 
+                x = lastX + 0.010;
             } else {
                 continue; // Old out-of-order data, drop it
             }
         }
-        
-        // Gap Rule: Break the line visually if signal was lost for > 2 seconds
+
+        // Gap Rule: Break the line visually if signal was lost for > 2 seconds,
+        // and record the interval so it can be shaded.
         if (lastX !== -Infinity && (x - lastX) > 2.0) {
+            gaps.push({ start: lastX, end: x });
             newX.push(x - 0.001);
             newY.push(Number.NaN);
         }
@@ -48,6 +55,43 @@ const appendSafe = (series: SciChart.XyDataSeries | undefined, xArr: number[], y
     }
     if (newX.length > 0) {
         series.appendRange(newX, newY);
+    }
+    return gaps;
+};
+
+const MAX_GAP_BOXES = 60;
+const GAP_FILL = 'rgba(244, 67, 54, 0.12)';
+
+type GapState = { surface: SciChart.SciChartSurface; boxes: SciChart.BoxAnnotation[] };
+
+/**
+ * Shade signal-loss intervals as translucent full-height boxes on a surface,
+ * pruning to a bounded number so a long recording can't accumulate annotations
+ * without limit. Wrapped in try/catch — gap shading must never break the trace.
+ */
+const shadeGaps = (st: GapState | undefined, gaps: Gap[]) => {
+    if (!st || gaps.length === 0) return;
+    for (const g of gaps) {
+        try {
+            const box = new SciChart.BoxAnnotation({
+                x1: g.start, x2: g.end,
+                y1: 0, y2: 1,
+                yCoordinateMode: SciChart.ECoordinateMode.Relative,
+                fill: GAP_FILL,
+                strokeThickness: 0,
+                isEditable: false,
+            });
+            st.surface.annotations.add(box);
+            st.boxes.push(box);
+        } catch {
+            // Annotation API guard.
+        }
+    }
+    while (st.boxes.length > MAX_GAP_BOXES) {
+        const old = st.boxes.shift();
+        if (old) {
+            try { st.surface.annotations.remove(old); } catch { /* already gone */ }
+        }
     }
 };
 
@@ -61,6 +105,8 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
     const dataSeriesRefs = useRef<Record<string, SciChart.XyDataSeries>>(Object.create(null));
     const surfacesRef = useRef<SciChart.SciChartSurface[]>([]);
+    // Per-waveform signal-gap shading: the surface to draw on + its live box annotations.
+    const gapStateRef = useRef<Record<string, { surface: SciChart.SciChartSurface; boxes: SciChart.BoxAnnotation[] }>>(Object.create(null));
     const observersRef = useRef<ResizeObserver[]>([]);
     const ppiLastPeakRef = useRef<{time: number, val: number}>({time: -1, val: 0}); 
     const lastDataRef = useRef<{ timestamp: number; receivedAt: number } | null>(null);
@@ -184,10 +230,11 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
                 const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000, containsNaN: true });
                 dataSeriesRefs.current.rawPleth = dataSeries;
-                
+                gapStateRef.current.rawPleth = { surface: sciChartSurface, boxes: [] };
+
                 const existingPleth = dataRef.current['NOM_PLETH'];
                 if (existingPleth && existingPleth.x.length > 0) {
-                    appendSafe(dataSeries, existingPleth.x, existingPleth.y);
+                    shadeGaps(gapStateRef.current.rawPleth, appendSafe(dataSeries, existingPleth.x, existingPleth.y));
                 }
 
                 sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
@@ -236,10 +283,11 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
                 const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000, containsNaN: true });
                 dataSeriesRefs.current.rawResp = dataSeries;
+                gapStateRef.current.rawResp = { surface: sciChartSurface, boxes: [] };
 
                 const existingResp = dataRef.current['NOM_RESP'];
                 if (existingResp && existingResp.x.length > 0) {
-                    appendSafe(dataSeries, existingResp.x, existingResp.y);
+                    shadeGaps(gapStateRef.current.rawResp, appendSafe(dataSeries, existingResp.x, existingResp.y));
                 }
 
                 sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
@@ -276,6 +324,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             // Clears mapping strictly on unmount so the live data pipeline
             // doesn't attempt to append data to an invalidated/deleted WebGL surface
             dataSeriesRefs.current = {};
+            gapStateRef.current = {};
         }
     }, [showRawPleth, showResp, showPpi, showOverlay, showSpectrogram, verticalGroup]);
 
@@ -290,6 +339,10 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
         const unsubscribe = subscribeToData((data) => {
             if (data === 'clear') {
                 Object.values(dataSeriesRefs.current).forEach(ds => ds?.clear());
+                Object.values(gapStateRef.current).forEach(st => {
+                    st.boxes.forEach(b => { try { st.surface.annotations.remove(b); } catch { /* gone */ } });
+                    st.boxes = [];
+                });
                 ppiLastPeakRef.current = {time: -1, val: 0};
                 return;
             }
@@ -319,13 +372,13 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             // --- UPDATE PHYSIO ID FOR PLETH ---
             const plethData = updateMap['NOM_PLETH'];
             if (plethData && dataSeriesRefs.current.rawPleth) {
-                appendSafe(dataSeriesRefs.current.rawPleth, plethData.x, plethData.y);
+                shadeGaps(gapStateRef.current.rawPleth, appendSafe(dataSeriesRefs.current.rawPleth, plethData.x, plethData.y));
             }
 
             // --- Append RESP data ---
             const respData = updateMap['NOM_RESP'];
             if (respData && dataSeriesRefs.current.rawResp) {
-                appendSafe(dataSeriesRefs.current.rawResp, respData.x, respData.y);
+                shadeGaps(gapStateRef.current.rawResp, appendSafe(dataSeriesRefs.current.rawResp, respData.x, respData.y));
             }
             
             const prData = updateMap['NOM_PLETH_PULS_RATE'];
@@ -409,13 +462,19 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2, width: '100%' }}>
             {showRawPleth && (
                 <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="subtitle1" gutterBottom>Raw PLETH Waveform{getProgressText('Pleth')}</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                        <Typography variant="subtitle1" gutterBottom>Raw PLETH Waveform{getProgressText('Pleth')}</Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
+                    </Box>
                     <div id="adv-chart-pleth" ref={chart1Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
                 </Paper>
             )}
             {showResp && (
                 <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="subtitle1" gutterBottom>Respiration Waveform{getProgressText('Resp')}</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                        <Typography variant="subtitle1" gutterBottom>Respiration Waveform{getProgressText('Resp')}</Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
+                    </Box>
                     <div id="adv-chart-resp" ref={chartRespDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
                 </Paper>
             )}

@@ -16,7 +16,7 @@ describe('meanStd', () => {
 
 describe('rollingZScores', () => {
     it('flags nothing on a constant series', () => {
-        const scored = rollingZScores(pts(Array(20).fill(60)), { window: 5, threshold: 3 });
+        const scored = rollingZScores(pts(new Array<number>(20).fill(60)), { window: 5, threshold: 3 });
         expect(scored.every((s) => !s.anomaly)).toBe(true);
         expect(scored.every((s) => s.z === 0)).toBe(true);
     });
@@ -47,7 +47,7 @@ describe('rollingZScores', () => {
     });
 
     it('treats a break from a perfectly flat window as an anomaly with clamped z', () => {
-        const vals = [...Array(10).fill(98), 92];
+        const vals = [...new Array<number>(10).fill(98), 92];
         const scored = rollingZScores(pts(vals), { window: 8, threshold: 3, minSamples: 8 });
         const last = scored[scored.length - 1];
         expect(last.anomaly).toBe(true);
@@ -60,11 +60,11 @@ describe('anomalyRuns', () => {
         // a sustained step (indices 20-21 read as anomalous before the window
         // absorbs the new level) then, well after the window flushes, a lone spike
         const vals = [
-            ...Array(20).fill(70), // 0-19 baseline
-            150, 150,              // 20-21 step up
-            ...Array(18).fill(70), // 22-39 baseline restored
-            150,                   // 40 isolated spike
-            70, 70, 70, 70,        // 41-44
+            ...new Array<number>(20).fill(70), // 0-19 baseline
+            150, 150,                          // 20-21 step up
+            ...new Array<number>(18).fill(70), // 22-39 baseline restored
+            150,                               // 40 isolated spike
+            70, 70, 70, 70,                    // 41-44
         ];
         const scored = rollingZScores(pts(vals), { window: 10, threshold: 3, minSamples: 10 });
         const runs = anomalyRuns(scored);
@@ -72,7 +72,7 @@ describe('anomalyRuns', () => {
     });
 
     it('returns no runs when nothing is anomalous', () => {
-        const scored = rollingZScores(pts(Array(12).fill(5)), { window: 4, threshold: 3 });
+        const scored = rollingZScores(pts(new Array<number>(12).fill(5)), { window: 4, threshold: 3 });
         expect(anomalyRuns(scored)).toEqual([]);
     });
 });
