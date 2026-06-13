@@ -262,6 +262,7 @@ const Sidebar = () => {
     
     const handleStop = () => {
         stopAllStreams();
+        actions.clearData();        // blank the charts — Stop means stop, not "freeze on stale data"
         actions.setStatus('Ready');
         actions.setReplayProgress(0);
         setActiveMode(null);
