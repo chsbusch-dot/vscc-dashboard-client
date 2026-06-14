@@ -100,10 +100,15 @@ export const processRawData = (text: string): TelemetryRecord[] => {
 };
 
 /**
- * Keeps only records newer than the latest already seen per channel, advancing
- * the `highWater` map in place. The URL (JSON poll) source re-fetches the whole
- * export every tick, so without this the same timestamps would be re-appended
- * each poll — growing the buffer unbounded and inflating running stats.
+ * Keeps only records strictly newer than the latest already seen per channel,
+ * advancing the `highWater` map in place. The URL (JSON poll) source re-fetches
+ * the whole export every tick, so without this the same timestamps would be
+ * re-appended each poll — growing the buffer unbounded and inflating running stats.
+ *
+ * Strict `>` is intentional for this source: the JSON export carries one reading
+ * per channel per export interval, so a record at a previously-seen timestamp is
+ * a re-fetch of the same reading (drop it), not a distinct new sample. (Duplicate
+ * intra-second samples are a waveform/MQTT phenomenon and never flow through here.)
  */
 export const selectFreshRecords = (
     records: TelemetryRecord[],
