@@ -378,7 +378,9 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
             actions.setStatus('Ready');
             const aggLabel = state.aggregation === '5min' ? '5-min' : '1-min';
             const note = data.aggregated_waveforms
-                ? `Loaded session #${session.id} • waveforms averaged to ${aggLabel} for this view`
+                ? (state.aggregation === 'raw'
+                    ? `Loaded session #${session.id} • span too large for RT — waveforms averaged to 1-min`
+                    : `Loaded session #${session.id} • waveforms averaged to ${aggLabel} for this view`)
                 : `Loaded session #${session.id}`;
             actions.setStatusNote(note);
             showSnack({
@@ -396,10 +398,11 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
     // De-identified ("share-safe") downloads: relative timestamps, no label/notes.
     const [deid, setDeid] = useState(false);
 
-    // Same native-download pattern for the everything-zip.
+    // Same native-download pattern for the everything-zip. Honours the de-id
+    // toggle so "Download all" can't silently export identified data.
     const handleDownloadAll = () => {
         const anchor = document.createElement('a');
-        anchor.href = sessionsDownloadAllUrl();
+        anchor.href = sessionsDownloadAllUrl(deid);
         anchor.download = '';
         document.body.appendChild(anchor);
         anchor.click();

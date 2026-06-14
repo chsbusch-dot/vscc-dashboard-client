@@ -45,9 +45,15 @@ const AnnotationsDialog: React.FC<Props> = ({ open, onClose }) => {
         if (open) void refresh();
     }, [open, refresh]);
 
+    // While replaying a stored session the charts show historical data-time, but
+    // "Mark now" would stamp the server's wall-clock now — far outside the data
+    // being reviewed. There is no replay playhead to supply the right time, so
+    // markers are disabled during replay (they remain a live-capture feature).
+    const isReplay = state.dataSource === 'upload';
+
     const add = async () => {
         const text = label.trim();
-        if (!text) return;
+        if (!text || isReplay) return;
         setBusy(true);
         try {
             await createAnnotation({ label: text });
@@ -84,16 +90,25 @@ const AnnotationsDialog: React.FC<Props> = ({ open, onClose }) => {
                         fullWidth
                         slotProps={{ htmlInput: { 'aria-label': 'New event label' } }}
                     />
-                    <Button
-                        variant="contained"
-                        startIcon={busy ? <CircularProgress size={14} /> : <AddIcon />}
-                        onClick={() => { void add(); }}
-                        disabled={busy || !label.trim()}
-                        sx={{ flexShrink: 0 }}
-                    >
-                        Mark now
-                    </Button>
+                    <Tooltip title={isReplay ? 'Disabled while replaying a stored session' : ''}>
+                        <span style={{ flexShrink: 0 }}>
+                            <Button
+                                variant="contained"
+                                startIcon={busy ? <CircularProgress size={14} /> : <AddIcon />}
+                                onClick={() => { void add(); }}
+                                disabled={busy || !label.trim() || isReplay}
+                                sx={{ flexShrink: 0 }}
+                            >
+                                Mark now
+                            </Button>
+                        </span>
+                    </Tooltip>
                 </Stack>
+                {isReplay && (
+                    <Alert severity="info" sx={{ mb: 1 }}>
+                        Event markers stamp the live capture time — disabled while replaying a stored session.
+                    </Alert>
+                )}
                 {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
                 {items.length === 0 ? (
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>

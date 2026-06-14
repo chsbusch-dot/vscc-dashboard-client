@@ -541,9 +541,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         if (!surface || !state.autoScroll || state.status !== 'Streaming') return;
         if (state.dataSource !== 'mqtt' && state.dataSource !== 'websocket') return;
 
-        // Reset signal timeout tracker when stream starts
-        lastChartDataReceivedAtRef.current = Date.now();
-
         const xAxis = surface.xAxes.get(0);
         if (!xAxis) return;
 
@@ -559,17 +556,32 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
                 xAxis.visibleRange = new SciChart.NumberRange(virtualMax - timeWindowSeconds, virtualMax);
             }
-            
-            // Signal Loss Detection (2 seconds threshold)
-            const chartElapsedSeconds = (now - lastChartDataReceivedAtRef.current) / 1000;
-            if (chartElapsedSeconds > 2.0 && !isSignalLostRef.current) {
-                isSignalLostRef.current = true;
-                setIsSignalLost(true);
-            }
         }, 50); // 20Hz continuous tracking
 
         return () => clearInterval(intervalId);
     }, [surface, state.autoScroll, state.status, state.dataSource, state.timeWindow]);
+
+    // Signal-loss detection runs for the whole live session, independent of
+    // pan/zoom (auto-scroll). Decoupling it from the scroll effect above means
+    // scrolling back to inspect a trace can't silence a NO-SIGNAL on disconnect.
+    // Observability only — never a clinical alarm.
+    useEffect(() => {
+        if (!surface || state.status !== 'Streaming') return;
+        if (state.dataSource !== 'mqtt' && state.dataSource !== 'websocket') return;
+
+        // Reset the timeout tracker when the stream starts.
+        lastChartDataReceivedAtRef.current = Date.now();
+
+        const intervalId = setInterval(() => {
+            const chartElapsedSeconds = (Date.now() - lastChartDataReceivedAtRef.current) / 1000;
+            if (chartElapsedSeconds > 2.0 && !isSignalLostRef.current) {
+                isSignalLostRef.current = true;
+                setIsSignalLost(true);
+            }
+        }, 250);
+
+        return () => clearInterval(intervalId);
+    }, [surface, state.status, state.dataSource]);
 
     // Effect for handling all zoom and pan behavior
     useEffect(() => {

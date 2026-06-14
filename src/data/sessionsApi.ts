@@ -186,10 +186,12 @@ export const sessionDownloadUrl = (id: number, deidentify = false): string =>
 
 /**
  * URL of GET /api/sessions/download-all — every session's package in one
- * streamed zip. Same rule as above: navigate, never fetch.
+ * streamed zip. Same rule as above: navigate, never fetch. `deidentify`
+ * propagates the share-safe export (relative timestamps, stripped metadata)
+ * to every session in the bundle.
  */
-export const sessionsDownloadAllUrl = (): string =>
-    `${API_BASE}/api/sessions/download-all`;
+export const sessionsDownloadAllUrl = (deidentify = false): string =>
+    `${API_BASE}/api/sessions/download-all${deidentify ? '?deidentify=1' : ''}`;
 
 /** PATCH /api/sessions/{id} — returns the updated session. */
 export const patchSession = (
@@ -198,18 +200,17 @@ export const patchSession = (
 ): Promise<SessionInfo> => request<SessionInfo>(`/api/sessions/${id}`, jsonInit('PATCH', payload));
 
 /**
- * GET /api/sessions/{id}/data — optional `agg` selects the replay resolution:
- * '1min'/'5min' force time-bucket averages; omitting it (or 'raw') uses the
- * backend's span-aware default (raw for short spans, 1-min for long ones), which
- * keeps very long sessions from loading millions of raw samples.
+ * GET /api/sessions/{id}/data — `agg` selects the replay resolution
+ * ('raw' | '1min' | '5min'). The value is always sent so the user's choice
+ * reaches the backend; the backend still downshifts an explicit 'raw' on very
+ * long spans to avoid loading millions of samples (reported via
+ * `aggregated_waveforms`).
  */
 export const fetchSessionData = (
     id: number,
     agg?: 'raw' | '1min' | '5min'
 ): Promise<SessionDataResponse> =>
-    request<SessionDataResponse>(
-        `/api/sessions/${id}/data${agg === '1min' || agg === '5min' ? `?agg=${agg}` : ''}`
-    );
+    request<SessionDataResponse>(`/api/sessions/${id}/data${agg ? `?agg=${agg}` : ''}`);
 
 /** POST /api/sessions/{id}/export */
 export const exportSession = (id: number): Promise<ExportSessionResult> =>

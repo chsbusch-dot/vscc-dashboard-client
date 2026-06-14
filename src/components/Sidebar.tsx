@@ -299,6 +299,7 @@ const Sidebar = () => {
             if (state.dataSource === 'url') {
                 pollingInterval.current = window.setInterval(() => {
                     const poll = async () => {
+                        if (statusRef.current === 'Paused') return; // don't accumulate while paused (mirrors the MQTT path)
                         const resp = await fetch(state.jsonUrl);
                         const newText = await resp.text();
                         const newRecords = processRawData(newText);

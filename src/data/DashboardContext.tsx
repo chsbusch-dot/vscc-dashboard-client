@@ -102,6 +102,12 @@ export const VSCC_HOST: string =
     (import.meta.env.VITE_VSCC_HOST as string | undefined) ||
     (typeof window !== 'undefined' ? window.location.hostname : 'localhost');
 
+// Bound the raw buffer per channel so long live sessions don't grow unbounded.
+// dataRef is the source-of-truth replayed back into the chart series, so this is
+// aligned with the render FIFO (fifoCapacity) — capping it loses no visible data.
+const MAX_BUFFER_POINTS = 500_000;
+const BUFFER_TRIM_SLACK = 50_000;
+
 const initialState: DashboardState = {
     status: 'Ready',
     dataSource: 'mqtt',
@@ -140,7 +146,7 @@ const initialState: DashboardState = {
     timeDisplay: loadTimeDisplay(),
     statusNote: null,
     selectedPhysioIds: (Object.keys(PHYSIO_META) as PhysioId[]).reduce((acc, key) => {
-        acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_PLETH', 'NOM_RESP'].includes(key);
+        acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_RESP_RATE'].includes(key);
         return acc;
     }, {} as Record<PhysioId, boolean>),
     advancedCharts: { rawPleth: true, ecg: true, resp: true },
@@ -205,11 +211,24 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         applyLayout: (layout) => dispatch(layout),
         appendData: (records: TelemetryRecord[]) => {
             if (records.length === 0) return;
+            const touched = new Set<string>();
             records.forEach(r => {
                 if (!r || !r.physio_id || r.time === undefined || r.value === undefined) return;
                 if (!dataRef.current[r.physio_id]) dataRef.current[r.physio_id] = { x: [], y: [] };
                 dataRef.current[r.physio_id].x.push(r.time);
                 dataRef.current[r.physio_id].y.push(r.value);
+                touched.add(r.physio_id);
+            });
+            // Bound memory: keep at most MAX_BUFFER_POINTS per channel, trimmed in
+            // amortized chunks (only once the slack is exceeded) so the splice cost
+            // stays negligible even for high-rate waveform channels.
+            touched.forEach(id => {
+                const s = dataRef.current[id];
+                if (s.x.length > MAX_BUFFER_POINTS + BUFFER_TRIM_SLACK) {
+                    const drop = s.x.length - MAX_BUFFER_POINTS;
+                    s.x.splice(0, drop);
+                    s.y.splice(0, drop);
+                }
             });
             listenersRef.current.forEach(listener => listener(records));
             const now = Date.now();
