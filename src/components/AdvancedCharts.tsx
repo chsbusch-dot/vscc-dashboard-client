@@ -119,6 +119,13 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
         timeDisplayRef.current = state.timeDisplay;
     }, [state.timeDisplay]);
 
+    // Kept fresh so the data subscription can scroll replayed (non-live) sources
+    // to the loaded data without re-subscribing on every slider/source change.
+    const dataSourceRef = useRef(state.dataSource);
+    useEffect(() => { dataSourceRef.current = state.dataSource; }, [state.dataSource]);
+    const timeWindowRef = useRef(state.timeWindow);
+    useEffect(() => { timeWindowRef.current = state.timeWindow; }, [state.timeWindow]);
+
     // Each raw-waveform chart is self-contained: showing it ensures its waveform
     // channel is actually being received, so the advanced toggle works on its own
     // (independent of the Configure Data Source channel toggles).
@@ -437,6 +444,20 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             const respData = updateMap['NOM_RESP'];
             if (respData && dataSeriesRefs.current.rawResp) {
                 shadeGaps(gapStateRef.current.rawResp, appendSafe(dataSeriesRefs.current.rawResp, respData.x, respData.y));
+            }
+
+            // Data-driven scroll for non-live sources (loaded session / file replay /
+            // URL): the continuous-scroll effect below only runs while Streaming, so
+            // without this the replayed waveforms plot at their real timestamps but
+            // stay off-screen — the chart looks empty even though the data is there.
+            const ds = dataSourceRef.current;
+            if (maxTimestamp > 0 && autoScrollRef.current && state.status !== 'Streaming'
+                && ds !== 'mqtt' && ds !== 'websocket') {
+                const windowSec = timeWindowRef.current * 60;
+                surfacesRef.current.forEach(surface => {
+                    const xAxis = surface.xAxes.get(0);
+                    if (xAxis) xAxis.visibleRange = new SciChart.NumberRange(maxTimestamp - windowSec, maxTimestamp);
+                });
             }
 
             // Batch flush the WebGL paints
