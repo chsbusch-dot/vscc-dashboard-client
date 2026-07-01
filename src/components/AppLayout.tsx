@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
     Box,
     AppBar,
@@ -8,13 +8,28 @@ import {
     CircularProgress,
     LinearProgress,
     Chip,
+    Button,
+    IconButton,
+    Tooltip,
 } from '@mui/material';
+import HistoryIcon from '@mui/icons-material/History';
+import SettingsIcon from '@mui/icons-material/Settings';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import BookmarkAddIcon from '@mui/icons-material/BookmarkAdd';
+import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize';
 import { SciChartVerticalGroup } from 'scichart';
 import Sidebar from './Sidebar';
 import { useDashboard } from '../data/DashboardContext';
 import { PHYSIO_META } from '../data/constants';
 import ChartContainer from './ChartContainer';
 import AdvancedCharts from './AdvancedCharts';
+import SessionsDrawer from './SessionsDrawer';
+import SettingsDialog from './SettingsDialog';
+import HealthIndicator from './HealthIndicator';
+import AnnotationsDialog from './AnnotationsDialog';
+import LayoutsDialog from './LayoutsDialog';
+import RecordingIndicator from './RecordingIndicator';
+import { getZoneLabel } from '../utils/timeFormat';
 
 const drawerWidth = 300;
 
@@ -22,6 +37,12 @@ const verticalGroup = new SciChartVerticalGroup();
 
 const AppLayout = () => {
     const { state } = useDashboard();
+    const [sessionsOpen, setSessionsOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [annotationsOpen, setAnnotationsOpen] = useState(false);
+    const [layoutsOpen, setLayoutsOpen] = useState(false);
+
+    const zoneLabel = useMemo(() => getZoneLabel(state.timeDisplay), [state.timeDisplay]);
 
     const chartGroups = useMemo(() => {
         const activePhysioIds = Object.entries(state.selectedPhysioIds)
@@ -63,23 +84,64 @@ const AppLayout = () => {
             >
                 <Toolbar>
                     <Typography variant="h6" noWrap component="div">
-                        VSCapture Visualizer
+                        VSCC Studio
                     </Typography>
-                    <Chip 
-                        label={state.dataSource || 'None'} 
-                        size="small" 
+                    <Chip
+                        label={state.dataSource || 'None'}
+                        size="small"
                         color="secondary"
-                        sx={{ ml: 2, textTransform: 'uppercase' }} 
+                        sx={{ ml: 2, textTransform: 'uppercase' }}
                     />
+                    <RecordingIndicator />
                     <Box sx={{ flex: 1 }} />
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         {state.status === 'Loading' && <CircularProgress size={24} color="inherit" />}
+                        {state.statusNote && (
+                            <Chip
+                                label={state.statusNote}
+                                size="small"
+                                variant="outlined"
+                                sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)', maxWidth: 360 }}
+                            />
+                        )}
                         <Typography variant="body1" sx={{ textTransform: 'uppercase' }}>
                             ({getStatusText()})
                         </Typography>
                         {state.replayProgress > 0 && (
                             <LinearProgress variant="determinate" value={state.replayProgress} color="secondary" sx={{ width: '100px', ml: 2, height: 8 }} />
                         )}
+                        <HealthIndicator />
+                        <Tooltip title="Chart time display zone (change in Settings)">
+                            <Chip
+                                icon={<AccessTimeIcon />}
+                                label={zoneLabel}
+                                size="small"
+                                variant="outlined"
+                                sx={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)', '& .MuiChip-icon': { color: 'inherit' } }}
+                            />
+                        </Tooltip>
+                        <Tooltip title="Mark an event (annotation)">
+                            <IconButton color="inherit" aria-label="Mark event" onClick={() => setAnnotationsOpen(true)}>
+                                <BookmarkAddIcon />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Saved layouts">
+                            <IconButton color="inherit" aria-label="Saved layouts" onClick={() => setLayoutsOpen(true)}>
+                                <DashboardCustomizeIcon />
+                            </IconButton>
+                        </Tooltip>
+                        <Button
+                            color="inherit"
+                            startIcon={<HistoryIcon />}
+                            onClick={() => setSessionsOpen(true)}
+                        >
+                            Sessions
+                        </Button>
+                        <Tooltip title="Settings">
+                            <IconButton color="inherit" aria-label="Open settings" onClick={() => setSettingsOpen(true)}>
+                                <SettingsIcon />
+                            </IconButton>
+                        </Tooltip>
                     </Box>
                 </Toolbar>
             </AppBar>
@@ -111,17 +173,20 @@ const AppLayout = () => {
                     </Box>
                 )}
 
-                {(state.advancedCharts.rawPleth || state.advancedCharts.resp || state.advancedCharts.ppi || state.advancedCharts.overlay || state.advancedCharts.spectrogram) && (
+                {(state.advancedCharts.rawPleth || state.advancedCharts.ecg || state.advancedCharts.resp) && (
                     <AdvancedCharts
                         verticalGroup={verticalGroup}
                         showRawPleth={state.advancedCharts.rawPleth}
+                        showEcg={state.advancedCharts.ecg}
                         showResp={state.advancedCharts.resp}
-                        showPpi={state.advancedCharts.ppi}
-                        showOverlay={state.advancedCharts.overlay}
-                        showSpectrogram={state.advancedCharts.spectrogram}
                     />
                 )}
             </Box>
+
+            <SessionsDrawer open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
+            <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+            <AnnotationsDialog open={annotationsOpen} onClose={() => setAnnotationsOpen(false)} />
+            <LayoutsDialog open={layoutsOpen} onClose={() => setLayoutsOpen(false)} />
         </Box>
     );
 };

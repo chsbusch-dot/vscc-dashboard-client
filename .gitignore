@@ -20,3 +20,6 @@ yarn-error.log*
 
 # OS files
 .DS_Store
+
+# Recorded patient telemetry used to generate screenshots — PHI, never commit
+.capture-data/

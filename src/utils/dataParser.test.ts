@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { processRawData } from './dataParser';
+import { processRawData, selectFreshRecords } from './dataParser';
+import type { TelemetryRecord } from '../data/DashboardContext';
+
+const rec = (physio_id: string, time: number, value = 1): TelemetryRecord =>
+    ({ physio_id: physio_id as TelemetryRecord['physio_id'], time, value, device_id: 'mp50' });
 
 describe('processRawData', () => {
     it('should correctly parse standard valid JSON telemetry', () => {
@@ -64,5 +68,47 @@ describe('processRawData', () => {
     it('should default device_id to mp50 when DeviceID is absent', () => {
         const input = '[{"Timestamp":"14-03-2026 04:39:00","PhysioID":"NOM_PLETH","Value":"1"}]';
         expect(processRawData(input)[0].device_id).toBe('mp50');
+    });
+});
+
+describe('selectFreshRecords', () => {
+    it('passes everything on the first poll and seeds the high-water map', () => {
+        const hw: Record<string, number> = {};
+        const out = selectFreshRecords([rec('NOM_PLETH', 10), rec('NOM_RESP', 12)], hw);
+        expect(out).toHaveLength(2);
+        expect(hw).toEqual({ NOM_PLETH: 10, NOM_RESP: 12 });
+    });
+
+    it('returns empty for empty input and leaves the map untouched', () => {
+        const hw: Record<string, number> = { NOM_PLETH: 10 };
+        expect(selectFreshRecords([], hw)).toEqual([]);
+        expect(hw).toEqual({ NOM_PLETH: 10 });
+    });
+
+    it('drops re-fetched duplicates and keeps only strictly-newer records', () => {
+        const hw: Record<string, number> = {};
+        selectFreshRecords([rec('NOM_PLETH', 10), rec('NOM_PLETH', 11)], hw);
+        // Next poll re-sends 10,11 (dupes) plus a new 12 — only 12 survives.
+        const out = selectFreshRecords(
+            [rec('NOM_PLETH', 10), rec('NOM_PLETH', 11), rec('NOM_PLETH', 12)], hw);
+        expect(out.map(r => r.time)).toEqual([12]);
+        expect(hw.NOM_PLETH).toBe(12);
+    });
+
+    it('treats a same-timestamp record as an already-seen re-fetch (strict >)', () => {
+        const hw: Record<string, number> = {};
+        selectFreshRecords([rec('NOM_PLETH', 100)], hw);
+        // Intentional for the one-reading-per-interval JSON source: a record at the
+        // prior max second is a re-fetch, not a new sample, so it is dropped.
+        expect(selectFreshRecords([rec('NOM_PLETH', 100)], hw)).toEqual([]);
+        expect(selectFreshRecords([rec('NOM_PLETH', 101)], hw).map(r => r.time)).toEqual([101]);
+    });
+
+    it('tracks the high-water mark per channel independently', () => {
+        const hw: Record<string, number> = { NOM_PLETH: 100 };
+        // NOM_RESP is new and lagging behind PLETH's mark — it must still pass.
+        const out = selectFreshRecords([rec('NOM_PLETH', 99), rec('NOM_RESP', 5)], hw);
+        expect(out.map(r => r.physio_id)).toEqual(['NOM_RESP']);
+        expect(hw).toEqual({ NOM_PLETH: 100, NOM_RESP: 5 });
     });
 });

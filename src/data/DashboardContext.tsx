@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useRef, useCallback } from 'react';
 import { PHYSIO_META, type PhysioId } from './constants';
+import { loadTimeDisplay, saveTimeDisplay, type TimeDisplayMode } from '../utils/timeFormat';
 
 // --- Types ---
 
@@ -15,7 +16,7 @@ export interface TimeSeries {
     y: (number | null)[];
 }
 
-export type WaveformId = 'VitalSigns' | 'ECG' | 'EEG' | 'Pleth' | 'Resp';
+export type WaveformId = 'VitalSigns' | 'ECG' | 'Pleth' | 'Resp';
 export type ProviderId = 'url' | 'websocket' | 'mqtt' | 'upload';
 
 export interface WaveformMatrixEntry {
@@ -39,13 +40,15 @@ export interface DashboardState {
     timeWindow: number;
     autoScroll: boolean;
     aggregation: 'raw' | '1min' | '5min';
+    /** How chart axis/cursor and session times are rendered. Formatting only — never shifts data. */
+    timeDisplay: TimeDisplayMode;
+    /** Short informational note shown in the header (e.g. "Loaded session #3"). */
+    statusNote: string | null;
     selectedPhysioIds: Record<PhysioId, boolean>;
     advancedCharts: {
         rawPleth: boolean;
+        ecg: boolean;
         resp: boolean;
-        ppi: boolean;
-        overlay: boolean;
-        spectrogram: boolean;
     };
 }
 
@@ -64,10 +67,14 @@ export interface DashboardActions {
     setTimeWindow: (window: number) => void;
     setAutoScroll: (auto: boolean) => void;
     setAggregation: (agg: DashboardState['aggregation']) => void;
+    setTimeDisplay: (mode: TimeDisplayMode) => void;
+    setStatusNote: (note: string | null) => void;
     togglePhysioId: (id: PhysioId) => void;
     selectAll: () => void;
     deselectAll: () => void;
     toggleAdvancedChart: (chart: keyof DashboardState['advancedCharts']) => void;
+    /** Apply a saved view layout (which charts/channels are shown + view settings) in one update. */
+    applyLayout: (layout: Partial<DashboardState>) => void;
     appendData: (records: TelemetryRecord[]) => void;
     clearData: () => void;
 }
@@ -77,39 +84,57 @@ interface DashboardContextType {
     actions: DashboardActions;
     dataRef: React.MutableRefObject<Record<string, TimeSeries>>;
     subscribeToData: (callback: (records: TelemetryRecord[] | 'clear') => void) => () => void;
+    /**
+     * Sidebar registers its stream stop handler here so other features
+     * (e.g. loading a stored session) can stop an active live stream
+     * without duplicating connection teardown logic.
+     */
+    stopStreamsRef: React.MutableRefObject<(() => void) | null>;
 }
+
+// Backend host resolution, in priority order:
+// 1. window.VSCC_HOST — runtime config written by the Docker entrypoint when the
+//    container runs with -e VSCC_HOST=<backend-ip> (two-host installs, no rebuild)
+// 2. VITE_VSCC_HOST — build-time/dev override (.env.local)
+// 3. the host the dashboard is served from — correct for the single-host install
+export const VSCC_HOST: string =
+    (typeof window !== 'undefined' && (window as { VSCC_HOST?: string }).VSCC_HOST) ||
+    (import.meta.env.VITE_VSCC_HOST as string | undefined) ||
+    (typeof window !== 'undefined' ? window.location.hostname : 'localhost');
+
+// Bound the raw buffer per channel so long live sessions don't grow unbounded.
+// dataRef is the source-of-truth replayed back into the chart series, so this is
+// aligned with the render FIFO (fifoCapacity) — capping it loses no visible data.
+const MAX_BUFFER_POINTS = 500_000;
+const BUFFER_TRIM_SLACK = 50_000;
 
 const initialState: DashboardState = {
     status: 'Ready',
     dataSource: 'mqtt',
-    jsonUrl: 'http://192.168.1.188:8000/DataExportVSC.json',
-    websocketUrl: 'ws://192.168.1.188:8000/ws/stream',
-    mqttBrokerUrl: 'ws://192.168.1.188:8083/mqtt',
+    jsonUrl: `http://${VSCC_HOST}:8000/DataExportVSC.json`,
+    websocketUrl: `ws://${VSCC_HOST}:8000/ws/stream`,
+    mqttBrokerUrl: `ws://${VSCC_HOST}:8083/mqtt`,
     globalWaveformToggles: {
         VitalSigns: true,
-        ECG: false,
-        EEG: false,
+        ECG: true,
         Pleth: true,
         Resp: true,
     },
     providerMappings: {
         VitalSigns: { label: 'Vital Signs', isHighFrequency: false, mappings: { url: 'DataExportVSC.json', websocket: 'ws/stream', mqtt: 'mp50/VitalSigns', upload: 'DataExportVSC.json' } },
         ECG: { label: 'HF ECG', isHighFrequency: true, mappings: { url: 'ECG.json', websocket: 'ws/stream/ecg', mqtt: 'mp50/HF-ECG', upload: 'NOM_ECG_ELEC_POTL_IIWaveExport.csv' } },
-        EEG: { label: 'HF EEG', isHighFrequency: true, mappings: { url: 'EEG.json', websocket: 'ws/stream/eeg', mqtt: 'mp50/HF-EEG', upload: 'NOM_EEG_ELEC_POTL_CRTXWaveExport.csv' } },
         Pleth: { label: 'HF PLETH', isHighFrequency: true, mappings: { url: 'PLETH.json', websocket: 'ws/stream/pleth', mqtt: 'mp50/HF-PLETH', upload: 'NOM_PLETHWaveExport.csv' } },
         Resp: { label: 'HF RESP', isHighFrequency: true, mappings: { url: 'RESP.json', websocket: 'ws/stream/resp', mqtt: 'mp50/HF-RESP', upload: 'NOM_RESPWaveExport.csv' } },
     },
     fileInputs: {
         VitalSigns: null,
         ECG: null,
-        EEG: null,
         Pleth: null,
         Resp: null,
     },
     uploadProgress: {
         VitalSigns: 0,
         ECG: 0,
-        EEG: 0,
         Pleth: 0,
         Resp: 0,
     },
@@ -118,11 +143,13 @@ const initialState: DashboardState = {
     timeWindow: 1,
     autoScroll: true,
     aggregation: 'raw',
+    timeDisplay: loadTimeDisplay(),
+    statusNote: null,
     selectedPhysioIds: (Object.keys(PHYSIO_META) as PhysioId[]).reduce((acc, key) => {
-        acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_PLETH', 'NOM_RESP'].includes(key);
+        acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_RESP_RATE'].includes(key);
         return acc;
     }, {} as Record<PhysioId, boolean>),
-    advancedCharts: { rawPleth: true, resp: true, ppi: false, overlay: false, spectrogram: false },
+    advancedCharts: { rawPleth: true, ecg: true, resp: true },
 };
 
 const dashboardReducer = (prev: DashboardState, action: Partial<DashboardState>): DashboardState => {
@@ -137,6 +164,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const dataRef = useRef<Record<string, TimeSeries>>({});
     const listenersRef = useRef<Set<(records: TelemetryRecord[] | 'clear') => void>>(new Set());
     const lastRecordUpdateRef = useRef<number>(0);
+    const stopStreamsRef = useRef<(() => void) | null>(null);
 
     const subscribeToData = useCallback((callback: (records: TelemetryRecord[] | 'clear') => void) => {
         listenersRef.current.add(callback);
@@ -165,6 +193,11 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setTimeWindow: (timeWindow) => dispatch({ timeWindow }),
         setAutoScroll: (autoScroll) => dispatch({ autoScroll }),
         setAggregation: (aggregation) => dispatch({ aggregation }),
+        setTimeDisplay: (timeDisplay) => {
+            saveTimeDisplay(timeDisplay);
+            dispatch({ timeDisplay });
+        },
+        setStatusNote: (statusNote) => dispatch({ statusNote }),
         togglePhysioId: (id) => dispatch({ selectedPhysioIds: { ...state.selectedPhysioIds, [id]: !state.selectedPhysioIds[id] } }),
         selectAll: () => {
             const allIds = (Object.keys(PHYSIO_META) as PhysioId[]).reduce((acc, key) => { acc[key] = true; return acc; }, {} as Record<PhysioId, boolean>);
@@ -175,13 +208,27 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             dispatch({ selectedPhysioIds: allIds });
         },
         toggleAdvancedChart: (chart) => dispatch({ advancedCharts: { ...state.advancedCharts, [chart]: !state.advancedCharts[chart] } }),
+        applyLayout: (layout) => dispatch(layout),
         appendData: (records: TelemetryRecord[]) => {
             if (records.length === 0) return;
+            const touched = new Set<string>();
             records.forEach(r => {
                 if (!r || !r.physio_id || r.time === undefined || r.value === undefined) return;
                 if (!dataRef.current[r.physio_id]) dataRef.current[r.physio_id] = { x: [], y: [] };
                 dataRef.current[r.physio_id].x.push(r.time);
                 dataRef.current[r.physio_id].y.push(r.value);
+                touched.add(r.physio_id);
+            });
+            // Bound memory: keep at most MAX_BUFFER_POINTS per channel, trimmed in
+            // amortized chunks (only once the slack is exceeded) so the splice cost
+            // stays negligible even for high-rate waveform channels.
+            touched.forEach(id => {
+                const s = dataRef.current[id];
+                if (s.x.length > MAX_BUFFER_POINTS + BUFFER_TRIM_SLACK) {
+                    const drop = s.x.length - MAX_BUFFER_POINTS;
+                    s.x.splice(0, drop);
+                    s.y.splice(0, drop);
+                }
             });
             listenersRef.current.forEach(listener => listener(records));
             const now = Date.now();
@@ -194,13 +241,13 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         },
         clearData: () => {
             dataRef.current = {};
-            dispatch({ recordCount: 0, replayProgress: 0 });
+            dispatch({ recordCount: 0, replayProgress: 0, statusNote: null });
             listenersRef.current.forEach(listener => listener('clear'));
         }
     };
 
     return (
-        <DashboardContext.Provider value={{ state, actions, dataRef, subscribeToData }}>
+        <DashboardContext.Provider value={{ state, actions, dataRef, subscribeToData, stopStreamsRef }}>
             {children}
         </DashboardContext.Provider>
     );

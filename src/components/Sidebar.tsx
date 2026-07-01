@@ -22,7 +22,7 @@ import { useDashboard, type TelemetryRecord, type ProviderId, type WaveformId } 
 import { PHYSIO_META, type PhysioId } from '../data/constants';
 import { getClinicalColor } from '../utils/colors';
 import { DataSourceModal } from './DataSourceModal';
-import { processRawData } from '../utils/dataParser';
+import { isMqttTelemetryMessage, processRawData, selectFreshRecords } from '../utils/dataParser';
 
 const StyledButton = styled(Button)(({ theme, color }) => ({
     ...(color === 'error' && { backgroundColor: theme.palette.error.main, color: theme.palette.error.contrastText, '&:hover': { backgroundColor: theme.palette.error.dark } }),
@@ -31,12 +31,16 @@ const StyledButton = styled(Button)(({ theme, color }) => ({
 }));
 
 const Sidebar = () => {
-    const { state, actions } = useDashboard();
+    const { state, actions, stopStreamsRef } = useDashboard();
     const [modalOpen, setModalOpen] = useState(false);
     const [triggerUploadCount, setTriggerUploadCount] = useState(0);
     
     // Refs for connection objects and state that shouldn't trigger re-renders
     const pollingInterval = useRef<number | null>(null);
+    // Per-channel high-water timestamp for URL (JSON poll) dedup. Each poll
+    // re-fetches the WHOLE export, so without this dataRef would accumulate the
+    // same timestamps every 5s — growing unbounded and (now) re-binned each tick.
+    const urlHighWaterRef = useRef<Record<string, number>>({});
     const mqttClient = useRef<MqttClient | null>(null);
     const websocket = useRef<WebSocket | null>(null);
     const replayState = useRef<{ intervalId: number | null }>({ intervalId: null });
@@ -123,6 +127,7 @@ const Sidebar = () => {
             actions.setStatus('Ready');
             actions.setReplayProgress(0);
             actions.clearData();
+            urlHighWaterRef.current = {};
             actions.setDataSource(newDataSource);
             actions.setAutoScroll(true);
             if (newDataSource === 'upload') {
@@ -145,6 +150,11 @@ const Sidebar = () => {
             
             const loadFilesFromState = async () => {
                 actions.setStatus('Loading');
+                // Update the ref synchronously too: the CSV chunk loop guards on
+                // statusRef.current and would otherwise read the stale 'Ready' value
+                // (the effect that syncs this ref hasn't re-run yet) and break on its
+                // first iteration, silently dropping all waveform data.
+                statusRef.current = 'Loading';
                 actions.clearData();
                 
                 const filePromises = (Object.keys(state.fileInputs) as WaveformId[]).map(async (waveformId) => {
@@ -257,15 +267,26 @@ const Sidebar = () => {
     
     const handleStop = () => {
         stopAllStreams();
+        actions.clearData();        // blank the charts — Stop means stop, not "freeze on stale data"
+        urlHighWaterRef.current = {};
         actions.setStatus('Ready');
         actions.setReplayProgress(0);
         setActiveMode(null);
     };
 
+    // Expose the stop handler so other features (e.g. loading a stored session
+    // from the Sessions drawer) can stop an active live stream. Re-registered
+    // every render to keep the closure fresh.
+    useEffect(() => {
+        stopStreamsRef.current = handleStop;
+        return () => { stopStreamsRef.current = null; };
+    });
+
     const handleStartLive = () => {
         if (activeMode === 'live') { handlePauseResume(); return; }
         stopAllStreams();
         actions.clearData();
+        urlHighWaterRef.current = {}; // fresh stream — forget prior high-water marks
         setActiveMode('live');
         actions.setAutoScroll(true);
         const startPolling = async () => {
@@ -273,15 +294,16 @@ const Sidebar = () => {
             const response = await fetch(state.jsonUrl);
             const text = await response.text();
             const records = processRawData(text);
-            actions.appendData(records);
+            actions.appendData(selectFreshRecords(records, urlHighWaterRef.current));
             actions.setStatus('Streaming');
             if (state.dataSource === 'url') {
                 pollingInterval.current = window.setInterval(() => {
                     const poll = async () => {
+                        if (statusRef.current === 'Paused') return; // don't accumulate while paused (mirrors the MQTT path)
                         const resp = await fetch(state.jsonUrl);
                         const newText = await resp.text();
                         const newRecords = processRawData(newText);
-                        actions.appendData(newRecords);
+                        actions.appendData(selectFreshRecords(newRecords, urlHighWaterRef.current));
                     };
                     poll().catch(console.error);
                 }, 5000);
@@ -307,18 +329,19 @@ const Sidebar = () => {
     const handleMqttMessage = (topic: string, payload: Buffer) => {
         if (statusRef.current === 'Paused') return;
         try {
-            const message = JSON.parse(payload.toString());
+            const message: unknown = JSON.parse(payload.toString());
+            if (!isMqttTelemetryMessage(message)) return;
             const { time, physio_id, value, device_id } = message;
-            if (typeof time !== 'number' || !physio_id || value === undefined) return;
-            
+            if (!physio_id) return;
+
             const mappedId = (Object.keys(mappingsRef.current) as WaveformId[]).find(
                 id => mappingsRef.current[id].mappings.mqtt === topic
             );
-            
+
             // Drop incoming payload entirely if globally toggled off
             if (!mappedId || !togglesRef.current[mappedId]) return;
 
-            const record: TelemetryRecord = { time, physio_id, value, device_id: device_id || 'mp50' };
+            const record: TelemetryRecord = { time, physio_id: physio_id as PhysioId, value, device_id: device_id || 'mp50' };
             
             if (mappingsRef.current[mappedId].isHighFrequency) {
                 if (!hfDataBuffer.current[topic]) hfDataBuffer.current[topic] = [];
@@ -333,7 +356,20 @@ const Sidebar = () => {
         startLiveStream(() => {
             const client = mqtt.connect(state.mqttBrokerUrl);
             mqttClient.current = client;
-            client.on('connect', () => actions.setStatus('Streaming'));
+            client.on('connect', () => {
+                actions.setStatus('Streaming');
+                // Subscribe here: the subscription effect only fires on state changes
+                // and skips while the client is still connecting, so the initial
+                // CONNACK would otherwise never trigger a subscribe on remote brokers.
+                (Object.keys(mappingsRef.current) as WaveformId[]).forEach((id) => {
+                    const topic = mappingsRef.current[id].mappings.mqtt;
+                    if (topic && togglesRef.current[id]) {
+                        client.subscribe(topic, { qos: 0 }, (err) => {
+                            if (!err) console.log(`Successfully subscribed to MQTT topic: ${topic}`);
+                        });
+                    }
+                });
+            });
             client.on('message', handleMqttMessage);
             client.on('error', (err) => { console.error("MQTT error:", err); handleStop(); });
             client.on('close', () => { if (activeMode === 'live' && state.dataSource === 'mqtt') handleStop(); });
@@ -404,11 +440,11 @@ const Sidebar = () => {
             <Box sx={{ flexShrink: 0 }}>
                 <Typography variant="h6" gutterBottom>Controls</Typography>
                 <Typography gutterBottom>Time Interval (min): {state.timeWindow}</Typography>
-                <Slider value={state.timeWindow} onChange={(_, value) => actions.setTimeWindow(value as number)} aria-labelledby="time-window-slider" valueLabelDisplay="auto" step={5} min={5} max={60} />
+                <Slider value={state.timeWindow} onChange={(_, value) => actions.setTimeWindow(value)} aria-labelledby="time-window-slider" valueLabelDisplay="auto" step={5} min={5} max={60} />
                 <FormControlLabel control={<Checkbox checked={state.autoScroll} onChange={(e) => actions.setAutoScroll(e.target.checked)} />} label="Auto-Scroll (Follow Live Data)" />
                 <FormControl fullWidth sx={{ mt: 2 }}>
                     <Typography gutterBottom>Aggregation</Typography>
-                    <Slider value={state.aggregation === 'raw' ? 0 : state.aggregation === '1min' ? 1 : 2} onChange={(_, value) => actions.setAggregation({ 0: 'raw', 1: '1min', 2: '5min' }[value as 0 | 1 | 2] as any)} step={null} marks={[{ value: 0, label: 'RT' }, { value: 1, label: '1m' }, { value: 2, label: '5m' }]} min={0} max={2} />
+                    <Slider value={state.aggregation === 'raw' ? 0 : state.aggregation === '1min' ? 1 : 2} onChange={(_, value) => actions.setAggregation(({ 0: 'raw', 1: '1min', 2: '5min' } as const)[value as 0 | 1 | 2])} step={null} marks={[{ value: 0, label: 'RT' }, { value: 1, label: '1m' }, { value: 2, label: '5m' }]} min={0} max={2} />
                 </FormControl>
             </Box>
 
@@ -416,7 +452,7 @@ const Sidebar = () => {
 
             {/* SECTION 4: Chart & Data Type Selectors (RESTORED) */}
             <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
-                 <ToggleButtonGroup value={activeTab} exclusive onChange={(_, v) => v && setActiveTab(v)} fullWidth size="small" sx={{ mb: 2, flexShrink: 0 }}>
+                 <ToggleButtonGroup value={activeTab} exclusive onChange={(_, v: 'basic' | 'advanced' | null) => v && setActiveTab(v)} fullWidth size="small" sx={{ mb: 2, flexShrink: 0 }}>
                     <ToggleButton value="basic">Basic Vitals</ToggleButton>
                     <ToggleButton value="advanced">Advanced Charts</ToggleButton>
                 </ToggleButtonGroup>
@@ -444,10 +480,8 @@ const Sidebar = () => {
                 {activeTab === 'advanced' && (
                     <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, overflowY: 'auto' }}>
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.rawPleth} onChange={() => actions.toggleAdvancedChart('rawPleth')} />} label="Raw PLETH Waveform" />
+                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.ecg} onChange={() => actions.toggleAdvancedChart('ecg')} />} label="Raw ECG Waveform" />
                         <FormControlLabel control={<Checkbox checked={state.advancedCharts.resp} onChange={() => actions.toggleAdvancedChart('resp')} />} label="Respiration Waveform" />
-                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.ppi} onChange={() => actions.toggleAdvancedChart('ppi')} />} label="PPI Plot" />
-                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.overlay} onChange={() => actions.toggleAdvancedChart('overlay')} />} label="Derived Parameters Overlay" />
-                        <FormControlLabel control={<Checkbox checked={state.advancedCharts.spectrogram} onChange={() => actions.toggleAdvancedChart('spectrogram')} />} label="Spectrogram" />
                     </Box>
                 )}
             </Box>
