@@ -67,29 +67,4 @@ export default defineConfig([
       '@typescript-eslint/no-floating-promises': 'off',
     },
   },
-  // Grandfathered when the lint gate was added to CI. These files parse
-  // untyped external JSON (`any`), which trips the type-checked rules below.
-  // Tracked for proper typing in Linear (WOR) rather than fixed in the
-  // CI-wiring change. New code is still held to the full rule set.
-  {
-    files: ['src/utils/dataParser.ts'],
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unsafe-argument': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-call': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
-    },
-  },
-  {
-    files: ['src/components/Sidebar.tsx'],
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
-      '@typescript-eslint/no-unsafe-argument': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-return': 'off',
-    },
-  },
 ]);
