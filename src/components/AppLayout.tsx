@@ -24,6 +24,7 @@ import { PHYSIO_META } from '../data/constants';
 import ChartContainer from './ChartContainer';
 import AdvancedCharts from './AdvancedCharts';
 import SessionsDrawer from './SessionsDrawer';
+import WindowedReplayController from './WindowedReplayController';
 import SettingsDialog from './SettingsDialog';
 import HealthIndicator from './HealthIndicator';
 import AnnotationsDialog from './AnnotationsDialog';
@@ -78,6 +79,7 @@ const AppLayout = () => {
 
     return (
         <Box sx={{ display: 'flex' }}>
+            <WindowedReplayController />
             <AppBar
                 position="fixed"
                 sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}

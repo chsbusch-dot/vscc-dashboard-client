@@ -208,9 +208,17 @@ export const patchSession = (
  */
 export const fetchSessionData = (
     id: number,
-    agg?: 'raw' | '1min' | '5min'
-): Promise<SessionDataResponse> =>
-    request<SessionDataResponse>(`/api/sessions/${id}/data${agg ? `?agg=${agg}` : ''}`);
+    agg?: 'raw' | '1min' | '5min',
+    fromTs?: number,
+    toTs?: number,
+): Promise<SessionDataResponse> => {
+    const q = new URLSearchParams();
+    if (agg) q.set('agg', agg);
+    if (fromTs !== undefined) q.set('from_ts', String(fromTs));
+    if (toTs !== undefined) q.set('to_ts', String(toTs));
+    const qs = q.toString();
+    return request<SessionDataResponse>(`/api/sessions/${id}/data${qs ? `?${qs}` : ''}`);
+};
 
 /** POST /api/sessions/{id}/export */
 export const exportSession = (id: number): Promise<ExportSessionResult> =>

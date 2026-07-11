@@ -21,7 +21,10 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     physioIds,
     verticalGroup
 }) => {
-    const { state, actions, subscribeToData, dataRef } = useDashboard();
+    const { state, actions, subscribeToData, dataRef, reportView, subscribeToViewRequest } = useDashboard();
+    // Set while applying a controller-requested range, so the resulting
+    // visibleRangeChanged isn't echoed back as a user pan/zoom.
+    const suppressReportRef = useRef(false);
     const sciChartSurfaceRef = useRef<SciChart.SciChartSurface | null>(null);
     const dataSeriesRefs = useRef<Record<PhysioId, SciChart.XyDataSeries>>({} as Record<PhysioId, SciChart.XyDataSeries>);
     const divElementId = `scichart-root-${groupName.replace(/\s/g, '')}`;
@@ -130,11 +133,23 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         });
         // Axis labels and cursor labels follow the Local/UTC time display toggle
         applyTimeDisplayToLabelProvider(xLabelProvider, () => timeDisplayRef.current);
-        surface.xAxes.add(new SciChart.DateTimeNumericAxis(wasmContext, {
+        const xAxisInit = new SciChart.DateTimeNumericAxis(wasmContext, {
             visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
             labelProvider: xLabelProvider,
             drawMajorBands: false,
-        }));
+        });
+        surface.xAxes.add(xAxisInit);
+        // Report user-driven range changes to the windowed-replay controller so it
+        // can fetch the window the view moved into. Suppressed for controller-driven
+        // (programmatic) range sets to avoid a feedback loop.
+        const vrc = (xAxisInit as unknown as { visibleRangeChanged?: { subscribe?: (cb: () => void) => void } }).visibleRangeChanged;
+        if (vrc && typeof vrc.subscribe === 'function') {
+            vrc.subscribe(() => {
+                if (suppressReportRef.current) return;
+                const rng = xAxisInit.visibleRange;
+                if (rng) reportView(rng.min, rng.max);
+            });
+        }
 
         // Configure Y-Axis
         const units = new Set(physioIds.map(id => PHYSIO_META[id].unit).filter(Boolean));
@@ -442,7 +457,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     useEffect(() => {
         rebuildAllSeries();
         binnedDirtyRef.current = false;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [surface, wasmContext, physioIdsStr, state.aggregation, state.dataSource]);
 
     // While live and aggregating, refresh the binned series from the raw buffer on
@@ -458,7 +472,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             }
         }, 1000);
         return () => window.clearInterval(intervalId);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [surface]);
 
     // Effect for continuous smooth scrolling in live modes (MQTT/WS)
@@ -508,6 +521,19 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
         return () => clearInterval(intervalId);
     }, [surface, state.status, state.dataSource]);
+
+    // Apply a range the windowed-replay controller requests (overview fit / window swap).
+    useEffect(() => {
+        if (!surface) return;
+        const unsub = subscribeToViewRequest((min, max) => {
+            const xAxis = surface.xAxes.get(0);
+            if (!xAxis) return;
+            suppressReportRef.current = true;
+            xAxis.visibleRange = new SciChart.NumberRange(min, max);
+            setTimeout(() => { suppressReportRef.current = false; }, 0);
+        });
+        return () => unsub();
+    }, [surface, subscribeToViewRequest]);
 
     // Effect for handling all zoom and pan behavior
     useEffect(() => {
