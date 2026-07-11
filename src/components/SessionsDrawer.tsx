@@ -29,12 +29,10 @@ import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SessionQualityDialog from './SessionQualityDialog';
-import { useDashboard, type TelemetryRecord } from '../data/DashboardContext';
-import type { PhysioId } from '../data/constants';
+import { useDashboard } from '../data/DashboardContext';
 import {
     createSession,
     deleteSession,
-    fetchSessionData,
     fetchSessions,
     fetchSessionSignals,
     patchSession,
@@ -47,7 +45,6 @@ import { formatDuration, isCommunitySignal, signalDisplayLabel } from '../utils/
 import { formatFullTime, type TimeDisplayMode } from '../utils/timeFormat';
 
 const LIST_POLL_INTERVAL_MS = 10000;
-const LOAD_CHUNK_SIZE = 5000;
 /** Signal legends of recording sessions are re-fetched at most this often. */
 const SIGNALS_REFRESH_MS = 30000;
 
@@ -347,52 +344,22 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
         setSessions(prev => prev.map(s => (s.id === updated.id ? updated : s)));
     }, []);
 
-    const handleLoad = async (session: SessionInfo) => {
-        setBusySessionId(session.id);
-        try {
-            // Stop any active live stream via the Sidebar's registered stop handler
-            stopStreamsRef.current?.();
-            // Loaded sessions behave like file replays: data-driven auto-scroll
-            actions.setDataSource('upload');
-            actions.setStatus('Loading');
-            actions.clearData();
-            actions.setAutoScroll(true);
-
-            const data = await fetchSessionData(session.id, state.aggregation);
-            const records: TelemetryRecord[] = [...data.numerics, ...data.waveforms]
-                .filter(r => r && typeof r.time === 'number' && !!r.physio_id)
-                .map(r => ({
-                    time: r.time,
-                    physio_id: r.physio_id as PhysioId,
-                    value: r.value,
-                    device_id: `session-${session.id}`,
-                }));
-            records.sort((a, b) => a.time - b.time);
-
-            for (let i = 0; i < records.length; i += LOAD_CHUNK_SIZE) {
-                actions.appendData(records.slice(i, i + LOAD_CHUNK_SIZE));
-                // Yield to the main thread so charts and UI stay responsive
-                await new Promise(resolve => setTimeout(resolve, 0));
-            }
-
-            actions.setStatus('Ready');
-            const aggLabel = state.aggregation === '5min' ? '5-min' : '1-min';
-            const note = data.aggregated_waveforms
-                ? (state.aggregation === 'raw'
-                    ? `Loaded session #${session.id} • span too large for RT — waveforms averaged to 1-min`
-                    : `Loaded session #${session.id} • waveforms averaged to ${aggLabel} for this view`)
-                : `Loaded session #${session.id}`;
-            actions.setStatusNote(note);
-            showSnack({
-                severity: data.aggregated_waveforms ? 'info' : 'success',
-                message: `${note} (${records.length} records)`,
-            });
-        } catch (err) {
-            actions.setStatus('Error');
-            showSnack({ severity: 'error', message: `Failed to load session #${session.id}: ${errorMessage(err)}` });
-        } finally {
-            setBusySessionId(null);
-        }
+    const handleLoad = (session: SessionInfo) => {
+        // Stop any active live stream via the Sidebar's registered stop handler.
+        stopStreamsRef.current?.();
+        actions.clearData();
+        actions.setDataSource('upload');
+        // Windowed replay: auto-scroll off — the window controller owns the view
+        // and fetches data for the visible span at a zoom-appropriate resolution.
+        actions.setAutoScroll(false);
+        actions.setStatus('Loading');
+        actions.setLoadedSession({
+            id: session.id,
+            start: session.started_at,
+            end: session.ended_at ?? Date.now() / 1000,
+        });
+        showSnack({ severity: 'info', message: `Loading session #${session.id} — zoom in for raw detail` });
+        onClose(); // reveal the charts
     };
 
     // De-identified ("share-safe") downloads: relative timestamps, no label/notes.

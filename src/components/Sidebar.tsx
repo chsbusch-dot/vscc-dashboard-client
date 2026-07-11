@@ -127,6 +127,7 @@ const Sidebar = () => {
             actions.setStatus('Ready');
             actions.setReplayProgress(0);
             actions.clearData();
+            actions.setLoadedSession(null); // leave windowed-replay mode
             urlHighWaterRef.current = {};
             actions.setDataSource(newDataSource);
             actions.setAutoScroll(true);
@@ -268,6 +269,7 @@ const Sidebar = () => {
     const handleStop = () => {
         stopAllStreams();
         actions.clearData();        // blank the charts — Stop means stop, not "freeze on stale data"
+        actions.setLoadedSession(null); // leave windowed-replay mode
         urlHighWaterRef.current = {};
         actions.setStatus('Ready');
         actions.setReplayProgress(0);
@@ -286,6 +288,7 @@ const Sidebar = () => {
         if (activeMode === 'live') { handlePauseResume(); return; }
         stopAllStreams();
         actions.clearData();
+        actions.setLoadedSession(null); // leave windowed-replay mode
         urlHighWaterRef.current = {}; // fresh stream — forget prior high-water marks
         setActiveMode('live');
         actions.setAutoScroll(true);
@@ -320,6 +323,7 @@ const Sidebar = () => {
         if (activeMode === 'live') { handlePauseResume(); return; }
         stopAllStreams();
         actions.clearData();
+        actions.setLoadedSession(null); // leave windowed-replay mode
         setActiveMode('live');
         actions.setAutoScroll(true);
         actions.setStatus('Streaming');
@@ -443,8 +447,10 @@ const Sidebar = () => {
                 <Slider value={state.timeWindow} onChange={(_, value) => actions.setTimeWindow(value)} aria-labelledby="time-window-slider" valueLabelDisplay="auto" step={5} min={5} max={60} />
                 <FormControlLabel control={<Checkbox checked={state.autoScroll} onChange={(e) => actions.setAutoScroll(e.target.checked)} />} label="Auto-Scroll (Follow Live Data)" />
                 <FormControl fullWidth sx={{ mt: 2 }}>
-                    <Typography gutterBottom>Aggregation</Typography>
-                    <Slider value={state.aggregation === 'raw' ? 0 : state.aggregation === '1min' ? 1 : 2} onChange={(_, value) => actions.setAggregation(({ 0: 'raw', 1: '1min', 2: '5min' } as const)[value as 0 | 1 | 2])} step={null} marks={[{ value: 0, label: 'RT' }, { value: 1, label: '1m' }, { value: 2, label: '5m' }]} min={0} max={2} />
+                    <Typography gutterBottom>
+                        Aggregation{state.loadedSession ? ' (auto by zoom in replay)' : ''}
+                    </Typography>
+                    <Slider disabled={state.loadedSession !== null} value={state.aggregation === 'raw' ? 0 : state.aggregation === '1min' ? 1 : 2} onChange={(_, value) => actions.setAggregation(({ 0: 'raw', 1: '1min', 2: '5min' } as const)[value as 0 | 1 | 2])} step={null} marks={[{ value: 0, label: 'RT' }, { value: 1, label: '1m' }, { value: 2, label: '5m' }]} min={0} max={2} />
                 </FormControl>
             </Box>
 

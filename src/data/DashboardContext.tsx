@@ -50,6 +50,9 @@ export interface DashboardState {
         ecg: boolean;
         resp: boolean;
     };
+    /** When a stored session is loaded for windowed replay; null for live/idle.
+     *  start/end are epoch seconds (the session's full extent). */
+    loadedSession: { id: number; start: number; end: number } | null;
 }
 
 export interface DashboardActions {
@@ -77,6 +80,7 @@ export interface DashboardActions {
     applyLayout: (layout: Partial<DashboardState>) => void;
     appendData: (records: TelemetryRecord[]) => void;
     clearData: () => void;
+    setLoadedSession: (s: DashboardState['loadedSession']) => void;
 }
 
 interface DashboardContextType {
@@ -90,6 +94,13 @@ interface DashboardContextType {
      * without duplicating connection teardown logic.
      */
     stopStreamsRef: React.MutableRefObject<(() => void) | null>;
+    // Windowed-replay view channels. Charts REPORT their visible range (user
+    // pan/zoom) to the window controller; the controller REQUESTS a range the
+    // charts apply (initial fit, or after a window swap). Epoch seconds.
+    subscribeToView: (cb: (min: number, max: number) => void) => () => void;
+    reportView: (min: number, max: number) => void;
+    subscribeToViewRequest: (cb: (min: number, max: number) => void) => () => void;
+    requestView: (min: number, max: number) => void;
 }
 
 // Backend host resolution, in priority order:
@@ -150,6 +161,7 @@ const initialState: DashboardState = {
         return acc;
     }, {} as Record<PhysioId, boolean>),
     advancedCharts: { rawPleth: true, ecg: true, resp: true },
+    loadedSession: null,
 };
 
 const dashboardReducer = (prev: DashboardState, action: Partial<DashboardState>): DashboardState => {
@@ -165,10 +177,27 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const listenersRef = useRef<Set<(records: TelemetryRecord[] | 'clear') => void>>(new Set());
     const lastRecordUpdateRef = useRef<number>(0);
     const stopStreamsRef = useRef<(() => void) | null>(null);
+    const viewListenersRef = useRef<Set<(min: number, max: number) => void>>(new Set());
+    const viewRequestListenersRef = useRef<Set<(min: number, max: number) => void>>(new Set());
 
     const subscribeToData = useCallback((callback: (records: TelemetryRecord[] | 'clear') => void) => {
         listenersRef.current.add(callback);
         return () => { listenersRef.current.delete(callback); };
+    }, []);
+
+    const subscribeToView = useCallback((cb: (min: number, max: number) => void) => {
+        viewListenersRef.current.add(cb);
+        return () => { viewListenersRef.current.delete(cb); };
+    }, []);
+    const reportView = useCallback((min: number, max: number) => {
+        viewListenersRef.current.forEach(l => l(min, max));
+    }, []);
+    const subscribeToViewRequest = useCallback((cb: (min: number, max: number) => void) => {
+        viewRequestListenersRef.current.add(cb);
+        return () => { viewRequestListenersRef.current.delete(cb); };
+    }, []);
+    const requestView = useCallback((min: number, max: number) => {
+        viewRequestListenersRef.current.forEach(l => l(min, max));
     }, []);
 
     const actions: DashboardActions = {
@@ -243,11 +272,15 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             dataRef.current = {};
             dispatch({ recordCount: 0, replayProgress: 0, statusNote: null });
             listenersRef.current.forEach(listener => listener('clear'));
-        }
+        },
+        setLoadedSession: (loadedSession) => dispatch({ loadedSession }),
     };
 
     return (
-        <DashboardContext.Provider value={{ state, actions, dataRef, subscribeToData, stopStreamsRef }}>
+        <DashboardContext.Provider value={{
+            state, actions, dataRef, subscribeToData, stopStreamsRef,
+            subscribeToView, reportView, subscribeToViewRequest, requestView,
+        }}>
             {children}
         </DashboardContext.Provider>
     );

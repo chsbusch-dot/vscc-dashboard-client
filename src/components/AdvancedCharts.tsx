@@ -94,7 +94,10 @@ const shadeGaps = (st: GapState | undefined, gaps: Gap[]) => {
 };
 
 const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawPleth, showEcg, showResp }) => {
-    const { state, actions, subscribeToData, dataRef } = useDashboard();
+    const { state, actions, subscribeToData, dataRef, reportView, subscribeToViewRequest } = useDashboard();
+    // Set while applying a controller-requested range so the resulting
+    // visibleRangeChanged isn't echoed back as a user pan/zoom.
+    const suppressReportRef = useRef(false);
     const chart1Div = useRef<HTMLDivElement>(null);
     const chartEcgDiv = useRef<HTMLDivElement>(null);
     const chartRespDiv = useRef<HTMLDivElement>(null); // Ref for RESP chart
@@ -214,6 +217,18 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 return provider;
             };
 
+            // Report user-driven range changes to the windowed-replay controller.
+            const wireRangeReport = (xAxis: SciChart.NumericAxis) => {
+                const vrc = (xAxis as unknown as { visibleRangeChanged?: { subscribe?: (cb: () => void) => void } }).visibleRangeChanged;
+                if (vrc && typeof vrc.subscribe === 'function') {
+                    vrc.subscribe(() => {
+                        if (suppressReportRef.current) return;
+                        const r = xAxis.visibleRange;
+                        if (r) reportView(r.min, r.max);
+                    });
+                }
+            };
+
             // --- Chart 1: Time-Domain Waveform Plot (Raw PLETH Signal) ---
             if (chart1Div.current && showRawPleth) {
                 const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chart1Div.current, {
@@ -238,6 +253,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                     growBy: new SciChart.NumberRange(0.1, 0.1)
                 });
                 sciChartSurface.xAxes.add(xAxis);
+                wireRangeReport(xAxis);
                 sciChartSurface.yAxes.add(yAxis);
 
                 const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000, containsNaN: true });
@@ -286,6 +302,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                     growBy: new SciChart.NumberRange(0.1, 0.1)
                 });
                 sciChartSurface.xAxes.add(xAxis);
+                wireRangeReport(xAxis);
                 sciChartSurface.yAxes.add(yAxis);
 
                 const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000, containsNaN: true });
@@ -339,6 +356,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                     drawMinorGridLines: false
                 });
                 sciChartSurface.xAxes.add(xAxis);
+                wireRangeReport(xAxis);
                 sciChartSurface.yAxes.add(yAxis);
 
                 const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000, containsNaN: true });
@@ -393,6 +411,19 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
     useEffect(() => {
         surfacesRef.current.forEach(surface => refreshSurfaceTimeLabels(surface));
     }, [state.timeDisplay]);
+
+    // Apply a range the windowed-replay controller requests (overview fit / window swap).
+    useEffect(() => {
+        const unsub = subscribeToViewRequest((min, max) => {
+            suppressReportRef.current = true;
+            surfacesRef.current.forEach(surface => {
+                const xAxis = surface.xAxes.get(0);
+                if (xAxis) xAxis.visibleRange = new SciChart.NumberRange(min, max);
+            });
+            setTimeout(() => { suppressReportRef.current = false; }, 0);
+        });
+        return () => unsub();
+    }, [subscribeToViewRequest]);
 
     // DATA SUBSCRIPTION EFFECT
     useEffect(() => {
