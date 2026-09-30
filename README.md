@@ -71,7 +71,12 @@ npm install        # install dependencies
 npm run dev        # Vite dev server with HMR (binds --host for LAN access)
 ```
 
-The dashboard defaults to the MQTT broker at `ws://192.168.1.188:8083/mqtt`. Open
+The dashboard targets the backend on the host it is served from: MQTT at
+`ws://<host>:8083/mqtt`, the REST API at `http://<host>:8001`, the streamer at
+`<host>:8000` (override the host with `VSCC_HOST`, see `docker-entrypoint.sh`).
+Served over **https**, or with `VSCC_SAME_ORIGIN=1`, it goes through the page's own
+origin instead (`wss://<host>/mqtt`, `/api/...`, `/DataExportVSC.json`, `/ws/stream`),
+so a reverse proxy in front of the stack must route those paths. Open
 **Configure Data Source** in the sidebar to point it at your broker, switch providers
 (MQTT / URL / WebSocket / File Upload), and map each waveform to its topic or file.
 
