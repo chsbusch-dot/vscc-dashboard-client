@@ -1,7 +1,7 @@
-import { VSCC_HOST } from './DashboardContext';
+import { BACKEND_URLS } from './DashboardContext';
 
-/** Base URL of the vscc-mqtt-server REST API. */
-export const API_BASE = `http://${VSCC_HOST}:8001`;
+/** Base URL of the vscc-mqtt-server REST API ('' = same origin, behind a proxy). */
+export const API_BASE = BACKEND_URLS.apiBase;
 
 // --- API shapes (mirroring the deployed backend) ---
 

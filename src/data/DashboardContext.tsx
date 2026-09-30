@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useRef, useCallback } from 'react';
 import { PHYSIO_META, type PhysioId } from './constants';
 import { loadTimeDisplay, saveTimeDisplay, type TimeDisplayMode } from '../utils/timeFormat';
+import { resolveBackendUrls, type BackendUrls } from '../utils/backendUrls';
 
 // --- Types ---
 
@@ -113,6 +114,16 @@ export const VSCC_HOST: string =
     (import.meta.env.VITE_VSCC_HOST as string | undefined) ||
     (typeof window !== 'undefined' ? window.location.hostname : 'localhost');
 
+// Endpoints. An https page (or window.VSCC_SAME_ORIGIN, written by the Docker
+// entrypoint for -e VSCC_SAME_ORIGIN=1) goes through the page's own origin,
+// where a reverse proxy routes /api, /mqtt and the streamer paths; see
+// utils/backendUrls.ts.
+export const BACKEND_URLS: BackendUrls = resolveBackendUrls(
+    typeof window !== 'undefined' ? window.location : { protocol: 'http:', host: 'localhost' },
+    VSCC_HOST,
+    typeof window !== 'undefined' && (window as { VSCC_SAME_ORIGIN?: boolean }).VSCC_SAME_ORIGIN === true,
+);
+
 // Bound the raw buffer per channel so long live sessions don't grow unbounded.
 // dataRef is the source-of-truth replayed back into the chart series, so this is
 // aligned with the render FIFO (fifoCapacity) — capping it loses no visible data.
@@ -122,9 +133,9 @@ const BUFFER_TRIM_SLACK = 50_000;
 const initialState: DashboardState = {
     status: 'Ready',
     dataSource: 'mqtt',
-    jsonUrl: `http://${VSCC_HOST}:8000/DataExportVSC.json`,
-    websocketUrl: `ws://${VSCC_HOST}:8000/ws/stream`,
-    mqttBrokerUrl: `ws://${VSCC_HOST}:8083/mqtt`,
+    jsonUrl: BACKEND_URLS.jsonUrl,
+    websocketUrl: BACKEND_URLS.websocketUrl,
+    mqttBrokerUrl: BACKEND_URLS.mqttBrokerUrl,
     globalWaveformToggles: {
         VitalSigns: true,
         ECG: true,
