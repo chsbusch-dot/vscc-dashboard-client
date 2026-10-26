@@ -70,6 +70,7 @@ const WindowedReplayController = () => {
             if (records.length > 0) {
                 // Set before the first append: the charts read it as data arrives.
                 gapBreakSecRef.current = gapBreakSecFor(win.agg);
+                actionsRef.current.setReplayAgg(win.agg);
                 actionsRef.current.clearData();
                 for (let i = 0; i < records.length; i += LOAD_CHUNK_SIZE) {
                     if (seq !== seqRef.current) return; // superseded mid-load

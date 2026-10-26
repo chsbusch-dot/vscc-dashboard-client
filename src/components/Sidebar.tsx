@@ -32,6 +32,8 @@ const StyledButton = styled(Button)(({ theme, color }) => ({
 
 const Sidebar = () => {
     const { state, actions, stopStreamsRef } = useDashboard();
+    // In replay the slider is read-only and shows the resolution zoom picked.
+    const shownAgg = state.loadedSession ? (state.replayAgg ?? state.aggregation) : state.aggregation;
     const [modalOpen, setModalOpen] = useState(false);
     const [triggerUploadCount, setTriggerUploadCount] = useState(0);
     
@@ -450,7 +452,7 @@ const Sidebar = () => {
                     <Typography gutterBottom>
                         Aggregation{state.loadedSession ? ' (auto by zoom in replay)' : ''}
                     </Typography>
-                    <Slider disabled={state.loadedSession !== null} value={state.aggregation === 'raw' ? 0 : state.aggregation === '1min' ? 1 : 2} onChange={(_, value) => actions.setAggregation(({ 0: 'raw', 1: '1min', 2: '5min' } as const)[value as 0 | 1 | 2])} step={null} marks={[{ value: 0, label: 'RT' }, { value: 1, label: '1m' }, { value: 2, label: '5m' }]} min={0} max={2} />
+                    <Slider disabled={state.loadedSession !== null} value={shownAgg === 'raw' ? 0 : shownAgg === '1min' ? 1 : 2} onChange={(_, value) => actions.setAggregation(({ 0: 'raw', 1: '1min', 2: '5min' } as const)[value as 0 | 1 | 2])} step={null} marks={[{ value: 0, label: 'RT' }, { value: 1, label: '1m' }, { value: 2, label: '5m' }]} min={0} max={2} />
                 </FormControl>
             </Box>
 
