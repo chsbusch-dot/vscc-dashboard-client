@@ -6,6 +6,8 @@ import { useDashboard } from '../data/DashboardContext';
 import { useSciChart } from '../hooks/useSciChart';
 import { formatChartTime } from '../utils/timeFormat';
 import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../utils/chartTimeAxis';
+import { addSessionBounds, removeSessionBounds } from '../utils/sessionBounds';
+import ReplayOverlay from './ReplayOverlay';
 
 import * as SciChart from "scichart";
 import { GAP_BREAK_SEC, bucketSecondsFor, binSeries, rawWithGapBreaks } from '../utils/seriesAgg';
@@ -40,6 +42,11 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     // time, so toggling never requires recreating the surface or its axes.
     const timeDisplayRef = useRef(state.timeDisplay);
     timeDisplayRef.current = state.timeDisplay;
+
+    // The replayed session, if any: the stable init effect starts the x-axis on
+    // it instead of on wall-clock now, and data autoscroll leaves the view alone.
+    const loadedSessionRef = useRef(state.loadedSession);
+    loadedSessionRef.current = state.loadedSession;
 
     // Aggregation + data-source read via refs so the imperative data subscription
     // can react to slider/source changes without being torn down and re-created.
@@ -128,13 +135,18 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
         // Configure X-Axis
         const now = Date.now() / 1000;
+        const ls = loadedSessionRef.current;
         const xLabelProvider = new SciChart.SmartDateLabelProvider({
             labelFormat: SciChart.ENumericFormat.Date_HHMMSS
         });
         // Axis labels and cursor labels follow the Local/UTC time display toggle
         applyTimeDisplayToLabelProvider(xLabelProvider, () => timeDisplayRef.current);
         const xAxisInit = new SciChart.DateTimeNumericAxis(wasmContext, {
-            visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
+            // In replay, start on the session: a now-anchored axis reports a range
+            // outside it and the chart opens on an empty stretch.
+            visibleRange: ls
+                ? new SciChart.NumberRange(ls.start, ls.end)
+                : new SciChart.NumberRange(now - state.timeWindow * 60, now),
             labelProvider: xLabelProvider,
             drawMajorBands: false,
         });
@@ -250,8 +262,23 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             })
         );
 
+        // The constructor's range is not reported, so tell the replay controller
+        // about the fresh axis and let it re-plan the window it holds.
+        if (ls) reportView(ls.start, ls.end);
+
         surface.resumeUpdates(); // Rule 3
     }, [surface, wasmContext, physioIdsStr]);
+
+    // Mark the replayed session's extent: grey outside it, labelled start and end
+    // lines. Declared after the configure effect, and keyed on the same deps, so
+    // it re-adds the bounds that effect's annotations.clear() removes.
+    const sessionStart = state.loadedSession?.start;
+    const sessionEnd = state.loadedSession?.end;
+    useEffect(() => {
+        if (!surface || !wasmContext || sessionStart === undefined || sessionEnd === undefined) return;
+        const added = addSessionBounds(surface, sessionStart, sessionEnd, t => formatChartTime(t, state.timeDisplay));
+        return () => removeSessionBounds(surface, added);
+    }, [surface, wasmContext, physioIdsStr, sessionStart, sessionEnd, state.timeDisplay]);
 
     // Re-render axis labels when the Local/UTC toggle changes.
     // Formatting only: the surface, axes and series are NOT recreated.
@@ -428,8 +455,10 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             if (maxTimestamp > 0) {
                 lastDataRef.current = { timestamp: maxTimestamp, receivedAt: Date.now() };
                 
-                // Legacy data-driven scroll for non-live sources (File Replay, URL)
-                if (state.autoScroll && state.dataSource !== 'mqtt' && state.dataSource !== 'websocket') {
+                // Legacy data-driven scroll for non-live sources (File Replay, URL).
+                // A loaded session is positioned by the replay controller instead.
+                if (state.autoScroll && state.dataSource !== 'mqtt' && state.dataSource !== 'websocket'
+                    && !loadedSessionRef.current) {
                     const xAxis = surface.xAxes.get(0);
                     if (xAxis) {
                         // URL polling is binnable (live); sessions render server-aggregated
@@ -603,6 +632,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                 {/* Chart Box (Right) */}
                 <Box sx={{ flexGrow: 1, minWidth: 0, height: chartHeight, position: 'relative' }}>
                     <div id={divElementId} style={{ width: "100%", height: "100%", position: 'relative' }}></div>
+                    <ReplayOverlay />
                     {isSignalLost && (
                         <Box
                             sx={{
