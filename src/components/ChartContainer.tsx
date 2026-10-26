@@ -10,7 +10,8 @@ import { addSessionBounds, removeSessionBounds } from '../utils/sessionBounds';
 import ReplayOverlay from './ReplayOverlay';
 
 import * as SciChart from "scichart";
-import { GAP_BREAK_SEC, bucketSecondsFor, binSeries, rawWithGapBreaks } from '../utils/seriesAgg';
+import { bucketSecondsFor, binSeries, rawWithGapBreaks } from '../utils/seriesAgg';
+import { SymmetricWheelZoomModifier } from '../utils/symmetricWheelZoomModifier';
 
 interface ChartContainerProps {
     groupName: string;
@@ -23,7 +24,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     physioIds,
     verticalGroup
 }) => {
-    const { state, actions, subscribeToData, dataRef, reportView, subscribeToViewRequest } = useDashboard();
+    const { state, actions, subscribeToData, dataRef, reportView, subscribeToViewRequest, requestView, gapBreakSecRef } = useDashboard();
     // Set while applying a controller-requested range, so the resulting
     // visibleRangeChanged isn't echoed back as a user pan/zoom.
     const suppressReportRef = useRef(false);
@@ -87,7 +88,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             const raw = dataRef.current[id];
             if (!raw || raw.x.length === 0) return;
             if (bucketSec === 0) {
-                const { gx, gy } = rawWithGapBreaks(raw.x, raw.y);
+                const { gx, gy } = rawWithGapBreaks(raw.x, raw.y, gapBreakSecRef.current);
                 series.appendRange(gx, gy);
             } else {
                 const { bx, by } = binSeries(raw.x, raw.y, bucketSec);
@@ -233,7 +234,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             }
         };
 
-        const mouseWheelZoomModifier = new SciChart.MouseWheelZoomModifier({ modifierGroup: "GlobalSyncGroup" });
+        const mouseWheelZoomModifier = new SymmetricWheelZoomModifier({ modifierGroup: "GlobalSyncGroup" });
         // Some SciChart builds/types expose different event shapes; guard at runtime.
         subscribeIfAvailable((mouseWheelZoomModifier as unknown as { zoomed?: unknown }).zoomed, onUserZoom);
 
@@ -241,10 +242,21 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         // Some SciChart builds/types expose different event shapes; guard at runtime.
         subscribeIfAvailable((zoomPanModifier as unknown as { panned?: unknown }).panned, onUserZoom);
 
+        // Double-click: in replay, fit every chart to the whole session (SciChart's
+        // zoomExtents only knows the window in memory) and let the replay
+        // controller load the overview for it.
+        const onZoomExtents = () => {
+            const session = loadedSessionRef.current;
+            if (!session) return true; // live: SciChart's own zoom to extents
+            requestView(session.start, session.end);
+            reportView(session.start, session.end);
+            return false;
+        };
+
         surface.chartModifiers.add(
             mouseWheelZoomModifier,
             zoomPanModifier,
-            new SciChart.ZoomExtentsModifier({ modifierGroup: "GlobalSyncGroup" }),
+            new SciChart.ZoomExtentsModifier({ modifierGroup: "GlobalSyncGroup", onZoomExtents }),
             new SciChart.RolloverModifier({
                 modifierGroup: "GlobalSyncGroup",
                 showTooltip: true,
@@ -399,8 +411,9 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
                         // Detect temporal gaps (e.g., monitor disconnected, MQTT paused).
                         // Same threshold as rawWithGapBreaks so a rebuilt RT series
-                        // reproduces the same dropout gaps as live append.
-                        if (lastX !== -Infinity && (currentX - lastX) > GAP_BREAK_SEC) {
+                        // reproduces the same dropout gaps as live append; scaled to
+                        // the bucket when replay has loaded 1-/5-min aggregates.
+                        if (lastX !== -Infinity && (currentX - lastX) > gapBreakSecRef.current) {
                             newX.push(currentX - 0.001); // Append NaN just before new point
                             newY.push(Number.NaN);
                         }

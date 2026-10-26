@@ -1,11 +1,39 @@
 import { describe, it, expect } from 'vitest';
-import { GAP_BREAK_SEC, bucketSecondsFor, binSeries, rawWithGapBreaks } from './seriesAgg';
+import { GAP_BREAK_SEC, bucketSecondsFor, binSeries, gapBreakSecFor, rawWithGapBreaks } from './seriesAgg';
 
 describe('bucketSecondsFor', () => {
     it('maps the slider positions to bucket widths', () => {
         expect(bucketSecondsFor('raw')).toBe(0);
         expect(bucketSecondsFor('1min')).toBe(60);
         expect(bucketSecondsFor('5min')).toBe(300);
+    });
+});
+
+describe('gapBreakSecFor', () => {
+    it('keeps the raw 2 s rule for raw data', () => {
+        expect(gapBreakSecFor('raw')).toBe(GAP_BREAK_SEC);
+    });
+
+    it('scales to one and a half buckets for aggregated data', () => {
+        expect(gapBreakSecFor('1min')).toBe(90);
+        expect(gapBreakSecFor('5min')).toBe(450);
+    });
+
+    it('connects consecutive 5-min buckets but breaks across a missing one', () => {
+        // Bucket centres 150, 450, 750, then 1350 (the 1050 bucket is missing).
+        const { gx, gy } = rawWithGapBreaks([150, 450, 750, 1350], [60, 61, 62, 63], gapBreakSecFor('5min'));
+        expect(gx).toEqual([150, 450, 750, 1349.999, 1350]);
+        expect(gy).toEqual([60, 61, 62, Number.NaN, 63]);
+    });
+
+    it('connects consecutive 1-min buckets', () => {
+        const { gy } = rawWithGapBreaks([30, 90, 150], [1, 2, 3], gapBreakSecFor('1min'));
+        expect(gy.some(Number.isNaN)).toBe(false);
+    });
+
+    it('breaks every pair of 1-min buckets under the raw rule (the bug)', () => {
+        const { gy } = rawWithGapBreaks([30, 90, 150], [1, 2, 3]);
+        expect(gy.filter(Number.isNaN)).toHaveLength(2);
     });
 });
 
