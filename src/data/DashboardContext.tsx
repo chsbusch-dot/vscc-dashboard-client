@@ -58,6 +58,9 @@ export interface DashboardState {
     /** True while the replayed view has no data (outside the session, or an
      *  empty window), so the charts can say so instead of staying blank. */
     replayEmpty: boolean;
+    /** Resolution of the replay window on screen (picked by zoom), or null
+     *  before the first window lands. Live mode uses `aggregation` instead. */
+    replayAgg: DashboardState['aggregation'] | null;
 }
 
 export interface DashboardActions {
@@ -87,6 +90,7 @@ export interface DashboardActions {
     clearData: () => void;
     setLoadedSession: (s: DashboardState['loadedSession']) => void;
     setReplayEmpty: (empty: boolean) => void;
+    setReplayAgg: (agg: DashboardState['replayAgg']) => void;
 }
 
 interface DashboardContextType {
@@ -183,6 +187,7 @@ const initialState: DashboardState = {
     advancedCharts: { rawPleth: true, ecg: true, resp: true },
     loadedSession: null,
     replayEmpty: false,
+    replayAgg: null,
 };
 
 const dashboardReducer = (prev: DashboardState, action: Partial<DashboardState>): DashboardState => {
@@ -295,8 +300,9 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             dispatch({ recordCount: 0, replayProgress: 0, statusNote: null });
             listenersRef.current.forEach(listener => listener('clear'));
         },
-        setLoadedSession: (loadedSession) => dispatch({ loadedSession, replayEmpty: false }),
+        setLoadedSession: (loadedSession) => dispatch({ loadedSession, replayEmpty: false, replayAgg: null }),
         setReplayEmpty: (replayEmpty) => dispatch({ replayEmpty }),
+        setReplayAgg: (replayAgg) => dispatch({ replayAgg }),
     };
 
     return (

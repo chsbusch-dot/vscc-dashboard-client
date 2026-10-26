@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GAP_BREAK_SEC, bucketSecondsFor, binSeries, gapBreakSecFor, rawWithGapBreaks } from './seriesAgg';
+import { GAP_BREAK_SEC, bucketSecondsFor, binSeries, gapBreakSecFor, gapLegendFor, rawWithGapBreaks } from './seriesAgg';
 
 describe('bucketSecondsFor', () => {
     it('maps the slider positions to bucket widths', () => {
@@ -34,6 +34,14 @@ describe('gapBreakSecFor', () => {
     it('breaks every pair of 1-min buckets under the raw rule (the bug)', () => {
         const { gy } = rawWithGapBreaks([30, 90, 150], [1, 2, 3]);
         expect(gy.filter(Number.isNaN)).toHaveLength(2);
+    });
+});
+
+describe('gapLegendFor', () => {
+    it('names the threshold in force at each resolution', () => {
+        expect(gapLegendFor('raw')).toBe('signal gap (>2 s)');
+        expect(gapLegendFor('1min')).toBe('signal gap (>90 s)');
+        expect(gapLegendFor('5min')).toBe('signal gap (>7.5 min)');
     });
 });
 

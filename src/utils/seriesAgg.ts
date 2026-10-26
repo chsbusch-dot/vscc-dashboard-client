@@ -22,6 +22,12 @@ export const bucketSecondsFor = (agg: 'raw' | '1min' | '5min'): number =>
 export const gapBreakSecFor = (agg: 'raw' | '1min' | '5min'): number =>
     Math.max(GAP_BREAK_SEC, 1.5 * bucketSecondsFor(agg));
 
+/** Chart legend for the gap shading, naming the threshold actually in force. */
+export const gapLegendFor = (agg: 'raw' | '1min' | '5min'): string => {
+    const sec = gapBreakSecFor(agg);
+    return `signal gap (>${sec < 120 ? `${sec} s` : `${sec / 60} min`})`;
+};
+
 /**
  * Raw passthrough that re-inserts the same `>gapSec` NaN line-breaks the
  * incremental append path draws, so rebuilding a series from the buffer (e.g.

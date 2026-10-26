@@ -8,6 +8,7 @@ import { formatChartTime } from '../utils/timeFormat';
 import { addSessionBounds, removeSessionBounds, type SessionBoundsAnnotations } from '../utils/sessionBounds';
 import ReplayOverlay from './ReplayOverlay';
 import { SymmetricWheelZoomModifier } from '../utils/symmetricWheelZoomModifier';
+import { gapLegendFor } from '../utils/seriesAgg';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
@@ -100,6 +101,8 @@ const shadeGaps = (st: GapState | undefined, gaps: Gap[]) => {
 
 const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawPleth, showEcg, showResp }) => {
     const { state, actions, subscribeToData, dataRef, reportView, subscribeToViewRequest, requestView, gapBreakSecRef } = useDashboard();
+    // Name the gap threshold the shading actually uses (it scales with replay resolution).
+    const gapLegend = gapLegendFor(state.loadedSession ? (state.replayAgg ?? 'raw') : 'raw');
     // Set while applying a controller-requested range so the resulting
     // visibleRangeChanged isn't echoed back as a user pan/zoom.
     const suppressReportRef = useRef(false);
@@ -609,7 +612,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
                     <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
                         <Typography variant="subtitle1" gutterBottom>Raw PLETH Waveform{getProgressText('Pleth')}</Typography>
-                        <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ {gapLegend}</Typography>
                     </Box>
                     <Box sx={{ position: 'relative', flexGrow: 1, minHeight: 0, display: 'flex' }}>
                         <div id="adv-chart-pleth" ref={chart1Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
@@ -621,7 +624,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
                     <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
                         <Typography variant="subtitle1" gutterBottom>Raw ECG Waveform</Typography>
-                        <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ {gapLegend}</Typography>
                     </Box>
                     <Box sx={{ position: 'relative', flexGrow: 1, minHeight: 0, display: 'flex' }}>
                         <div id="adv-chart-ecg" ref={chartEcgDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
@@ -633,7 +636,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
                     <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
                         <Typography variant="subtitle1" gutterBottom>Respiration Waveform{getProgressText('Resp')}</Typography>
-                        <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ {gapLegend}</Typography>
                     </Box>
                     <Box sx={{ position: 'relative', flexGrow: 1, minHeight: 0, display: 'flex' }}>
                         <div id="adv-chart-resp" ref={chartRespDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
