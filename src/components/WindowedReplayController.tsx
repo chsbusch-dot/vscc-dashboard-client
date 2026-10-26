@@ -63,7 +63,10 @@ const WindowedReplayController = () => {
             if (seq !== seqRef.current) return; // a newer window superseded this one
             const records: TelemetryRecord[] = [...data.numerics, ...data.waveforms]
                 .filter(r => r && typeof r.time === 'number' && !!r.physio_id)
-                .map(r => ({ time: r.time, physio_id: r.physio_id as PhysioId, value: r.value, device_id: `session-${sessionId}` }));
+                .map(r => ({
+                    time: r.time, physio_id: r.physio_id as PhysioId, value: r.value, device_id: `session-${sessionId}`,
+                    min: r.min, max: r.max,
+                }));
             records.sort((a, b) => a.time - b.time);
 
             // An empty window never wipes what is on screen; the overlay says why.

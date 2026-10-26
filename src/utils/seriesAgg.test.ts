@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GAP_BREAK_SEC, bucketSecondsFor, binSeries, gapBreakSecFor, gapLegendFor, rawWithGapBreaks } from './seriesAgg';
+import { GAP_BREAK_SEC, bandWithGapBreaks, bucketSecondsFor, binSeries, gapBreakSecFor, gapLegendFor, rawWithGapBreaks } from './seriesAgg';
 
 describe('bucketSecondsFor', () => {
     it('maps the slider positions to bucket widths', () => {
@@ -69,6 +69,32 @@ describe('rawWithGapBreaks', () => {
     it('breaks when the gap is just over gapSec', () => {
         const { gy } = rawWithGapBreaks([0, 2.001], [1, 2], GAP_BREAK_SEC);
         expect(gy).toEqual([1, Number.NaN, 2]);
+    });
+});
+
+describe('bandWithGapBreaks', () => {
+    it('returns empty for empty input', () => {
+        expect(bandWithGapBreaks([], [], [], 90)).toEqual({ bx: [], blo: [], bhi: [], gaps: [] });
+    });
+
+    it('passes consecutive buckets through and converts null to NaN', () => {
+        expect(bandWithGapBreaks([30, 90], [-1, null], [2, 3], 90)).toEqual({
+            bx: [30, 90], blo: [-1, Number.NaN], bhi: [2, 3], gaps: [],
+        });
+    });
+
+    it('breaks the band across a missing 5-min bucket and reports the gap', () => {
+        const r = bandWithGapBreaks([150, 450, 1050], [-1, -2, -3], [1, 2, 3], gapBreakSecFor('5min'));
+        expect(r.bx).toEqual([150, 450, 1049.999, 1050]);
+        expect(r.blo).toEqual([-1, -2, Number.NaN, -3]);
+        expect(r.bhi).toEqual([1, 2, Number.NaN, 3]);
+        expect(r.gaps).toEqual([{ start: 450, end: 1050 }]);
+    });
+
+    it('continues from the last drawn x: drops older points, breaks across a gap', () => {
+        const r = bandWithGapBreaks([60, 90, 300], [0, 1, 2], [5, 6, 7], 90, 90);
+        expect(r.bx).toEqual([299.999, 300]);
+        expect(r.gaps).toEqual([{ start: 90, end: 300 }]);
     });
 });
 

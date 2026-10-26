@@ -11,11 +11,17 @@ export interface TelemetryRecord {
     physio_id: PhysioId;
     value: number | null;
     device_id: string;
+    /** Bucket range on aggregated replay waveforms; absent on raw and live data. */
+    min?: number | null;
+    max?: number | null;
 }
 
 export interface TimeSeries {
     x: number[];
     y: (number | null)[];
+    /** Bucket min/max aligned with x, when the series is an aggregated replay waveform. */
+    lo?: (number | null)[];
+    hi?: (number | null)[];
 }
 
 export type WaveformId = 'VitalSigns' | 'ECG' | 'Pleth' | 'Resp';
@@ -271,8 +277,13 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             records.forEach(r => {
                 if (!r || !r.physio_id || r.time === undefined || r.value === undefined) return;
                 if (!dataRef.current[r.physio_id]) dataRef.current[r.physio_id] = { x: [], y: [] };
-                dataRef.current[r.physio_id].x.push(r.time);
-                dataRef.current[r.physio_id].y.push(r.value);
+                const s = dataRef.current[r.physio_id];
+                s.x.push(r.time);
+                s.y.push(r.value);
+                if (r.min !== undefined && r.max !== undefined) {
+                    (s.lo ??= []).push(r.min);
+                    (s.hi ??= []).push(r.max);
+                }
                 touched.add(r.physio_id);
             });
             // Bound memory: keep at most MAX_BUFFER_POINTS per channel, trimmed in
@@ -284,6 +295,8 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     const drop = s.x.length - MAX_BUFFER_POINTS;
                     s.x.splice(0, drop);
                     s.y.splice(0, drop);
+                    s.lo?.splice(0, drop);
+                    s.hi?.splice(0, drop);
                 }
             });
             listenersRef.current.forEach(listener => listener(records));
