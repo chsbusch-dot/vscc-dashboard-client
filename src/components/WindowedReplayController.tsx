@@ -3,6 +3,7 @@ import { useDashboard, type TelemetryRecord } from '../data/DashboardContext';
 import type { PhysioId } from '../data/constants';
 import { fetchSessionData } from '../data/sessionsApi';
 import { pickAgg, planWindow, type ReplayWindow } from '../utils/replayWindow';
+import { GAP_BREAK_SEC, gapBreakSecFor } from '../utils/seriesAgg';
 
 /**
  * Windowed / level-of-detail replay of a stored session. Headless (renders null).
@@ -22,7 +23,7 @@ const LOAD_CHUNK_SIZE = 5000;
 const DEBOUNCE_MS = 250;
 
 const WindowedReplayController = () => {
-    const { state, actions, subscribeToView, requestView } = useDashboard();
+    const { state, actions, subscribeToView, requestView, gapBreakSecRef } = useDashboard();
     const loaded = state.loadedSession;
 
     // `actions` is rebuilt on every render. Read it through a ref so fetchWindow
@@ -67,6 +68,8 @@ const WindowedReplayController = () => {
 
             // An empty window never wipes what is on screen; the overlay says why.
             if (records.length > 0) {
+                // Set before the first append: the charts read it as data arrives.
+                gapBreakSecRef.current = gapBreakSecFor(win.agg);
                 actionsRef.current.clearData();
                 for (let i = 0; i < records.length; i += LOAD_CHUNK_SIZE) {
                     if (seq !== seqRef.current) return; // superseded mid-load
@@ -88,7 +91,7 @@ const WindowedReplayController = () => {
             if (isOverview) overviewReadyRef.current = true;
             actionsRef.current.setStatus('Error');
         }
-    }, [requestView, setEmpty]);
+    }, [requestView, setEmpty, gapBreakSecRef]);
 
     // On load: show the session's extent at once, then fetch an overview of the
     // whole session at the resolution its full width warrants (so the fitted view
@@ -98,7 +101,10 @@ const WindowedReplayController = () => {
         loadedEmptyRef.current = false;
         overviewReadyRef.current = false;
         replayEmptyRef.current = false; // setLoadedSession resets replayEmpty too
-        if (!loaded) return;
+        if (!loaded) {
+            gapBreakSecRef.current = GAP_BREAK_SEC; // back to live / raw data
+            return;
+        }
         requestView(loaded.start, loaded.end);
         const win: ReplayWindow = { agg: pickAgg(loaded.end - loaded.start), from: loaded.start, to: loaded.end };
         void fetchWindow(loaded.id, win, [loaded.start, loaded.end]);

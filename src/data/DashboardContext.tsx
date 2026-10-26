@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useRef, useCallback } fro
 import { PHYSIO_META, type PhysioId } from './constants';
 import { loadTimeDisplay, saveTimeDisplay, type TimeDisplayMode } from '../utils/timeFormat';
 import { resolveBackendUrls, type BackendUrls } from '../utils/backendUrls';
+import { GAP_BREAK_SEC } from '../utils/seriesAgg';
 
 // --- Types ---
 
@@ -106,6 +107,10 @@ interface DashboardContextType {
     reportView: (min: number, max: number) => void;
     subscribeToViewRequest: (cb: (min: number, max: number) => void) => () => void;
     requestView: (min: number, max: number) => void;
+    // Line-break threshold (seconds) for the data now in the buffer: 2 s for raw,
+    // scaled to the bucket when replay loads 1-/5-min aggregates. A ref, not
+    // state, because appendData notifies the charts synchronously.
+    gapBreakSecRef: React.MutableRefObject<number>;
 }
 
 // Backend host resolution, in priority order:
@@ -195,6 +200,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const stopStreamsRef = useRef<(() => void) | null>(null);
     const viewListenersRef = useRef<Set<(min: number, max: number) => void>>(new Set());
     const viewRequestListenersRef = useRef<Set<(min: number, max: number) => void>>(new Set());
+    const gapBreakSecRef = useRef<number>(GAP_BREAK_SEC);
 
     const subscribeToData = useCallback((callback: (records: TelemetryRecord[] | 'clear') => void) => {
         listenersRef.current.add(callback);
@@ -296,7 +302,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return (
         <DashboardContext.Provider value={{
             state, actions, dataRef, subscribeToData, stopStreamsRef,
-            subscribeToView, reportView, subscribeToViewRequest, requestView,
+            subscribeToView, reportView, subscribeToViewRequest, requestView, gapBreakSecRef,
         }}>
             {children}
         </DashboardContext.Provider>

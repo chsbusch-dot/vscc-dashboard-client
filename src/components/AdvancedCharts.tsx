@@ -7,6 +7,7 @@ import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../ut
 import { formatChartTime } from '../utils/timeFormat';
 import { addSessionBounds, removeSessionBounds, type SessionBoundsAnnotations } from '../utils/sessionBounds';
 import ReplayOverlay from './ReplayOverlay';
+import { SymmetricWheelZoomModifier } from '../utils/symmetricWheelZoomModifier';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
@@ -19,8 +20,8 @@ interface AdvancedChartsProps {
 interface Gap { start: number; end: number; }
 
 // Utility to safely append only newer, strictly increasing points to avoid SciChart sorting exceptions.
-// Returns the >2 s gaps it detected so the caller can shade them on the trace.
-const appendSafe = (series: SciChart.XyDataSeries | undefined, xArr: number[], yArr: (number | null)[]): Gap[] => {
+// Returns the gaps longer than gapSec it detected so the caller can shade them on the trace.
+const appendSafe = (series: SciChart.XyDataSeries | undefined, xArr: number[], yArr: (number | null)[], gapSec: number): Gap[] => {
     const gaps: Gap[] = [];
     if (!series) return gaps;
     const count = series.count();
@@ -42,9 +43,10 @@ const appendSafe = (series: SciChart.XyDataSeries | undefined, xArr: number[], y
             }
         }
 
-        // Gap Rule: Break the line visually if signal was lost for > 2 seconds,
-        // and record the interval so it can be shaded.
-        if (lastX !== -Infinity && (x - lastX) > 2.0) {
+        // Gap Rule: Break the line visually if signal was lost for > gapSec
+        // (2 s raw, scaled to the bucket for replayed aggregates), and record
+        // the interval so it can be shaded.
+        if (lastX !== -Infinity && (x - lastX) > gapSec) {
             gaps.push({ start: lastX, end: x });
             newX.push(x - 0.001);
             newY.push(Number.NaN);
@@ -97,7 +99,7 @@ const shadeGaps = (st: GapState | undefined, gaps: Gap[]) => {
 };
 
 const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawPleth, showEcg, showResp }) => {
-    const { state, actions, subscribeToData, dataRef, reportView, subscribeToViewRequest } = useDashboard();
+    const { state, actions, subscribeToData, dataRef, reportView, subscribeToViewRequest, requestView, gapBreakSecRef } = useDashboard();
     // Set while applying a controller-requested range so the resulting
     // visibleRangeChanged isn't echoed back as a user pan/zoom.
     const suppressReportRef = useRef(false);
@@ -224,14 +226,25 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                     }
                 };
 
-                const mouseWheelZoomModifier = new SciChart.MouseWheelZoomModifier({ modifierGroup: "GlobalSyncGroup" });
+                const mouseWheelZoomModifier = new SymmetricWheelZoomModifier({ modifierGroup: "GlobalSyncGroup" });
                 subscribeIfAvailable((mouseWheelZoomModifier as unknown as { zoomed?: unknown }).zoomed, onUserZoom);
 
                 const zoomPanModifier = new SciChart.ZoomPanModifier({ modifierGroup: "GlobalSyncGroup" });
                 subscribeIfAvailable((zoomPanModifier as unknown as { panned?: unknown }).panned, onUserZoom);
 
+                // Double-click: in replay, fit every chart to the whole session
+                // (SciChart's zoomExtents only knows the window in memory) and let
+                // the replay controller load the overview for it.
+                const onZoomExtents = () => {
+                    const session = loadedSessionRef.current;
+                    if (!session) return true; // live: SciChart's own zoom to extents
+                    requestView(session.start, session.end);
+                    reportView(session.start, session.end);
+                    return false;
+                };
+
                 return [
-                    new SciChart.ZoomExtentsModifier({ modifierGroup: "GlobalSyncGroup" }),
+                    new SciChart.ZoomExtentsModifier({ modifierGroup: "GlobalSyncGroup", onZoomExtents }),
                     mouseWheelZoomModifier,
                     zoomPanModifier
                 ];
@@ -289,7 +302,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
                 const existingPleth = dataRef.current['NOM_PLETH'];
                 if (existingPleth && existingPleth.x.length > 0) {
-                    shadeGaps(gapStateRef.current.rawPleth, appendSafe(dataSeries, existingPleth.x, existingPleth.y));
+                    shadeGaps(gapStateRef.current.rawPleth, appendSafe(dataSeries, existingPleth.x, existingPleth.y, gapBreakSecRef.current));
                 }
 
                 sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
@@ -338,7 +351,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
                 const existingEcg = dataRef.current['NOM_ECG_ELEC_POTL_II'];
                 if (existingEcg && existingEcg.x.length > 0) {
-                    shadeGaps(gapStateRef.current.rawEcg, appendSafe(dataSeries, existingEcg.x, existingEcg.y));
+                    shadeGaps(gapStateRef.current.rawEcg, appendSafe(dataSeries, existingEcg.x, existingEcg.y, gapBreakSecRef.current));
                 }
 
                 sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
@@ -392,7 +405,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
                 const existingResp = dataRef.current['NOM_RESP'];
                 if (existingResp && existingResp.x.length > 0) {
-                    shadeGaps(gapStateRef.current.rawResp, appendSafe(dataSeries, existingResp.x, existingResp.y));
+                    shadeGaps(gapStateRef.current.rawResp, appendSafe(dataSeries, existingResp.x, existingResp.y, gapBreakSecRef.current));
                 }
 
                 sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
@@ -493,19 +506,19 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             // --- UPDATE PHYSIO ID FOR PLETH ---
             const plethData = updateMap['NOM_PLETH'];
             if (plethData && dataSeriesRefs.current.rawPleth) {
-                shadeGaps(gapStateRef.current.rawPleth, appendSafe(dataSeriesRefs.current.rawPleth, plethData.x, plethData.y));
+                shadeGaps(gapStateRef.current.rawPleth, appendSafe(dataSeriesRefs.current.rawPleth, plethData.x, plethData.y, gapBreakSecRef.current));
             }
 
             // --- Append ECG data ---
             const ecgData = updateMap['NOM_ECG_ELEC_POTL_II'];
             if (ecgData && dataSeriesRefs.current.rawEcg) {
-                shadeGaps(gapStateRef.current.rawEcg, appendSafe(dataSeriesRefs.current.rawEcg, ecgData.x, ecgData.y));
+                shadeGaps(gapStateRef.current.rawEcg, appendSafe(dataSeriesRefs.current.rawEcg, ecgData.x, ecgData.y, gapBreakSecRef.current));
             }
 
             // --- Append RESP data ---
             const respData = updateMap['NOM_RESP'];
             if (respData && dataSeriesRefs.current.rawResp) {
-                shadeGaps(gapStateRef.current.rawResp, appendSafe(dataSeriesRefs.current.rawResp, respData.x, respData.y));
+                shadeGaps(gapStateRef.current.rawResp, appendSafe(dataSeriesRefs.current.rawResp, respData.x, respData.y, gapBreakSecRef.current));
             }
 
             // Data-driven scroll for non-live sources (file replay / URL): the

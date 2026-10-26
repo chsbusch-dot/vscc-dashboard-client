@@ -14,6 +14,15 @@ export const bucketSecondsFor = (agg: 'raw' | '1min' | '5min'): number =>
     agg === '1min' ? 60 : agg === '5min' ? 300 : 0;
 
 /**
+ * Gap threshold for data that arrives already aggregated (windowed replay at
+ * 1-/5-min resolution). Consecutive buckets sit a full bucket apart, so the raw
+ * 2 s rule would break the line between every pair and nothing would draw; one
+ * and a half buckets still breaks across a missing bucket.
+ */
+export const gapBreakSecFor = (agg: 'raw' | '1min' | '5min'): number =>
+    Math.max(GAP_BREAK_SEC, 1.5 * bucketSecondsFor(agg));
+
+/**
  * Raw passthrough that re-inserts the same `>gapSec` NaN line-breaks the
  * incremental append path draws, so rebuilding a series from the buffer (e.g.
  * switching back to RT) reproduces signal-dropout gaps instead of connecting
