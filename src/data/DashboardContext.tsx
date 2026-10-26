@@ -54,6 +54,9 @@ export interface DashboardState {
     /** When a stored session is loaded for windowed replay; null for live/idle.
      *  start/end are epoch seconds (the session's full extent). */
     loadedSession: { id: number; start: number; end: number } | null;
+    /** True while the replayed view has no data (outside the session, or an
+     *  empty window), so the charts can say so instead of staying blank. */
+    replayEmpty: boolean;
 }
 
 export interface DashboardActions {
@@ -82,6 +85,7 @@ export interface DashboardActions {
     appendData: (records: TelemetryRecord[]) => void;
     clearData: () => void;
     setLoadedSession: (s: DashboardState['loadedSession']) => void;
+    setReplayEmpty: (empty: boolean) => void;
 }
 
 interface DashboardContextType {
@@ -173,6 +177,7 @@ const initialState: DashboardState = {
     }, {} as Record<PhysioId, boolean>),
     advancedCharts: { rawPleth: true, ecg: true, resp: true },
     loadedSession: null,
+    replayEmpty: false,
 };
 
 const dashboardReducer = (prev: DashboardState, action: Partial<DashboardState>): DashboardState => {
@@ -284,7 +289,8 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             dispatch({ recordCount: 0, replayProgress: 0, statusNote: null });
             listenersRef.current.forEach(listener => listener('clear'));
         },
-        setLoadedSession: (loadedSession) => dispatch({ loadedSession }),
+        setLoadedSession: (loadedSession) => dispatch({ loadedSession, replayEmpty: false }),
+        setReplayEmpty: (replayEmpty) => dispatch({ replayEmpty }),
     };
 
     return (

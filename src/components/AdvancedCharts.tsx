@@ -4,6 +4,9 @@ import * as SciChart from 'scichart';
 import { useDashboard, type WaveformId } from '../data/DashboardContext';
 import { getClinicalColor } from '../utils/colors';
 import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../utils/chartTimeAxis';
+import { formatChartTime } from '../utils/timeFormat';
+import { addSessionBounds, removeSessionBounds, type SessionBoundsAnnotations } from '../utils/sessionBounds';
+import ReplayOverlay from './ReplayOverlay';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
@@ -129,6 +132,24 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
     const timeWindowRef = useRef(state.timeWindow);
     useEffect(() => { timeWindowRef.current = state.timeWindow; }, [state.timeWindow]);
 
+    // The replayed session, if any: charts start on it instead of on wall-clock
+    // now, data autoscroll leaves the view to the replay controller, and each
+    // surface carries the session's start/end markers.
+    const loadedSessionRef = useRef(state.loadedSession);
+    useEffect(() => { loadedSessionRef.current = state.loadedSession; }, [state.loadedSession]);
+    const boundsRef = useRef(new Map<SciChart.SciChartSurface, SessionBoundsAnnotations>());
+    const applyBounds = (surface: SciChart.SciChartSurface) => {
+        const old = boundsRef.current.get(surface);
+        if (old) removeSessionBounds(surface, old);
+        boundsRef.current.delete(surface);
+        const ls = loadedSessionRef.current;
+        if (!ls) return;
+        boundsRef.current.set(surface, addSessionBounds(surface, ls.start, ls.end, t => formatChartTime(t, timeDisplayRef.current)));
+    };
+    useEffect(() => {
+        surfacesRef.current.forEach(applyBounds);
+    }, [state.loadedSession?.start, state.loadedSession?.end, state.timeDisplay]);
+
     // Each raw-waveform chart is self-contained: showing it ensures its waveform
     // channel is actually being received, so the advanced toggle works on its own
     // (independent of the Configure Data Source channel toggles).
@@ -183,6 +204,12 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             SciChart.SciChartSurface.configure({ wasmUrl: "/scichart2d.wasm" });
 
             const now = Date.now() / 1000;
+            // In replay, start on the session: a now-anchored axis reports a range
+            // outside it and the chart opens on an empty stretch.
+            const ls = loadedSessionRef.current;
+            const initRange = () => ls
+                ? new SciChart.NumberRange(ls.start, ls.end)
+                : new SciChart.NumberRange(now - state.timeWindow * 60, now);
 
             // 2. SciChart Listeners: Helper to build modifiers that disable auto-scroll on active interaction
             const getModifiers = () => {
@@ -244,7 +271,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 
                 const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, {
                     axisTitle: "Time",
-                    visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
+                    visibleRange: initRange(),
                     labelProvider: makeTimeLabelProvider()
                 });
                 const yAxis = new SciChart.NumericAxis(wasmContext, {
@@ -293,7 +320,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
                 const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, {
                     axisTitle: "Time",
-                    visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
+                    visibleRange: initRange(),
                     labelProvider: makeTimeLabelProvider()
                 });
                 const yAxis = new SciChart.NumericAxis(wasmContext, {
@@ -342,7 +369,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 
                 const xAxis = new SciChart.DateTimeNumericAxis(wasmContext, {
                     axisTitle: "Time",
-                    visibleRange: new SciChart.NumberRange(now - state.timeWindow * 60, now),
+                    visibleRange: initRange(),
                     labelProvider: makeTimeLabelProvider()
                 });
                 const yAxis = new SciChart.NumericAxis(wasmContext, {
@@ -381,6 +408,9 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 sciChartSurface.resumeUpdates();
             }
             // Other charts remain unchanged
+
+            // The bounds effect ran before these surfaces existed.
+            if (isMounted) localSurfaces.forEach(applyBounds);
         };
 
         initCharts();
@@ -392,6 +422,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             // to protect against React StrictMode double-invocations & race conditions.
             localSurfaces.forEach(s => {
                 s.delete();
+                boundsRef.current.delete(s);
                 surfacesRef.current = surfacesRef.current.filter(ref => ref !== s);
             });
             localObservers.forEach(o => {
@@ -477,13 +508,14 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 shadeGaps(gapStateRef.current.rawResp, appendSafe(dataSeriesRefs.current.rawResp, respData.x, respData.y));
             }
 
-            // Data-driven scroll for non-live sources (loaded session / file replay /
-            // URL): the continuous-scroll effect below only runs while Streaming, so
-            // without this the replayed waveforms plot at their real timestamps but
-            // stay off-screen — the chart looks empty even though the data is there.
+            // Data-driven scroll for non-live sources (file replay / URL): the
+            // continuous-scroll effect below only runs while Streaming, so without
+            // this the replayed waveforms plot at their real timestamps but stay
+            // off-screen — the chart looks empty even though the data is there.
+            // A loaded session is positioned by the replay controller instead.
             const ds = dataSourceRef.current;
             if (maxTimestamp > 0 && autoScrollRef.current && state.status !== 'Streaming'
-                && ds !== 'mqtt' && ds !== 'websocket') {
+                && ds !== 'mqtt' && ds !== 'websocket' && !loadedSessionRef.current) {
                 const windowSec = timeWindowRef.current * 60;
                 surfacesRef.current.forEach(surface => {
                     const xAxis = surface.xAxes.get(0);
@@ -566,7 +598,10 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                         <Typography variant="subtitle1" gutterBottom>Raw PLETH Waveform{getProgressText('Pleth')}</Typography>
                         <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
                     </Box>
-                    <div id="adv-chart-pleth" ref={chart1Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
+                    <Box sx={{ position: 'relative', flexGrow: 1, minHeight: 0, display: 'flex' }}>
+                        <div id="adv-chart-pleth" ref={chart1Div} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
+                        <ReplayOverlay />
+                    </Box>
                 </Paper>
             )}
             {showEcg && (
@@ -575,7 +610,10 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                         <Typography variant="subtitle1" gutterBottom>Raw ECG Waveform</Typography>
                         <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
                     </Box>
-                    <div id="adv-chart-ecg" ref={chartEcgDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
+                    <Box sx={{ position: 'relative', flexGrow: 1, minHeight: 0, display: 'flex' }}>
+                        <div id="adv-chart-ecg" ref={chartEcgDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
+                        <ReplayOverlay />
+                    </Box>
                 </Paper>
             )}
             {showResp && (
@@ -584,7 +622,10 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                         <Typography variant="subtitle1" gutterBottom>Respiration Waveform{getProgressText('Resp')}</Typography>
                         <Typography variant="caption" sx={{ color: 'rgba(211,47,47,0.85)' }}>▦ signal gap (&gt;2 s)</Typography>
                     </Box>
-                    <div id="adv-chart-resp" ref={chartRespDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
+                    <Box sx={{ position: 'relative', flexGrow: 1, minHeight: 0, display: 'flex' }}>
+                        <div id="adv-chart-resp" ref={chartRespDiv} style={{ flexGrow: 1, width: "100%", minHeight: 0 }} />
+                        <ReplayOverlay />
+                    </Box>
                 </Paper>
             )}
         </Box>
