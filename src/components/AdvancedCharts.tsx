@@ -8,7 +8,7 @@ import { formatChartTime } from '../utils/timeFormat';
 import { addSessionBounds, removeSessionBounds, type SessionBoundsAnnotations } from '../utils/sessionBounds';
 import ReplayOverlay from './ReplayOverlay';
 import { SymmetricWheelZoomModifier } from '../utils/symmetricWheelZoomModifier';
-import { gapLegendFor } from '../utils/seriesAgg';
+import { bandWithGapBreaks, gapLegendFor } from '../utils/seriesAgg';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
@@ -63,6 +63,21 @@ const appendSafe = (series: SciChart.XyDataSeries | undefined, xArr: number[], y
     return gaps;
 };
 
+// Band counterpart of appendSafe for aggregated replay waveforms: appends the
+// bucket min/max envelope after the series' last x and returns the gaps it broke across.
+const appendBandSafe = (series: SciChart.XyyDataSeries | undefined, x: number[], lo: (number | null)[], hi: (number | null)[], gapSec: number): Gap[] => {
+    if (!series) return [];
+    const count = series.count();
+    const lastX = count > 0 ? series.getNativeXValues().get(count - 1) : -Infinity;
+    const { bx, blo, bhi, gaps } = bandWithGapBreaks(x, lo, hi, gapSec, lastX);
+    if (bx.length > 0) series.appendRange(bx, bhi, blo);
+    return gaps;
+};
+
+/** Whether a batch carries a bucket min/max for every point (aggregated replay). */
+const hasBand = (s: { x: number[]; lo?: (number | null)[]; hi?: (number | null)[] }): s is { x: number[]; lo: (number | null)[]; hi: (number | null)[] } =>
+    s.x.length > 0 && s.lo?.length === s.x.length && s.hi?.length === s.x.length;
+
 const MAX_GAP_BOXES = 60;
 const GAP_FILL = 'rgba(244, 67, 54, 0.12)';
 
@@ -111,6 +126,8 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
     const chartRespDiv = useRef<HTMLDivElement>(null); // Ref for RESP chart
 
     const dataSeriesRefs = useRef<Record<string, SciChart.XyDataSeries>>(Object.create(null));
+    // ECG min/max envelope, drawn instead of the line when replay sends aggregated rows.
+    const ecgBandRef = useRef<SciChart.XyyDataSeries | undefined>(undefined);
     const surfacesRef = useRef<SciChart.SciChartSurface[]>([]);
     // Per-waveform signal-gap shading: the surface to draw on + its live box annotations.
     const gapStateRef = useRef<Record<string, { surface: SciChart.SciChartSurface; boxes: SciChart.BoxAnnotation[] }>>(Object.create(null));
@@ -351,14 +368,25 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
                 const dataSeries = new SciChart.XyDataSeries(wasmContext, { fifoCapacity: 500000, containsNaN: true });
                 dataSeriesRefs.current.rawEcg = dataSeries;
                 gapStateRef.current.rawEcg = { surface: sciChartSurface, boxes: [] };
+                // An averaged ECG flattens to a line near baseline, so aggregated
+                // replay draws the bucket min/max as a band instead (y = max, y1 = min).
+                const bandSeries = new SciChart.XyyDataSeries(wasmContext, { containsNaN: true });
+                ecgBandRef.current = bandSeries;
 
                 const existingEcg = dataRef.current['NOM_ECG_ELEC_POTL_II'];
-                if (existingEcg && existingEcg.x.length > 0) {
+                if (existingEcg && hasBand(existingEcg)) {
+                    shadeGaps(gapStateRef.current.rawEcg, appendBandSafe(bandSeries, existingEcg.x, existingEcg.lo, existingEcg.hi, gapBreakSecRef.current));
+                } else if (existingEcg && existingEcg.x.length > 0) {
                     shadeGaps(gapStateRef.current.rawEcg, appendSafe(dataSeries, existingEcg.x, existingEcg.y, gapBreakSecRef.current));
                 }
 
+                const ecgColor = getClinicalColor('NOM_ECG_ELEC_POTL_II');
+                sciChartSurface.renderableSeries.add(new SciChart.FastBandRenderableSeries(wasmContext, {
+                    dataSeries: bandSeries, stroke: ecgColor, strokeY1: ecgColor,
+                    fill: `${ecgColor}66`, fillY1: `${ecgColor}66`, strokeThickness: 1
+                }));
                 sciChartSurface.renderableSeries.add(new SciChart.FastLineRenderableSeries(wasmContext, {
-                    dataSeries, stroke: getClinicalColor('NOM_ECG_ELEC_POTL_II'), strokeThickness: 2
+                    dataSeries, stroke: ecgColor, strokeThickness: 2
                 }));
 
                 sciChartSurface.chartModifiers.add(...getModifiers());
@@ -449,6 +477,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             // Clears mapping strictly on unmount so the live data pipeline
             // doesn't attempt to append data to an invalidated/deleted WebGL surface
             dataSeriesRefs.current = {};
+            ecgBandRef.current = undefined;
             gapStateRef.current = {};
         }
     }, [showRawPleth, showEcg, showResp, verticalGroup]);
@@ -477,6 +506,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
         const unsubscribe = subscribeToData((data) => {
             if (data === 'clear') {
                 Object.values(dataSeriesRefs.current).forEach(ds => ds?.clear());
+                ecgBandRef.current?.clear();
                 Object.values(gapStateRef.current).forEach(st => {
                     st.boxes.forEach(b => { try { st.surface.annotations.remove(b); } catch { /* gone */ } });
                     st.boxes = [];
@@ -486,16 +516,20 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
             if (state.status === 'Paused') return;
 
-            const updateMap: Record<string, { x: number[], y: (number)[] }> = {};
+            const updateMap: Record<string, { x: number[], y: (number)[], lo: (number | null)[], hi: (number | null)[] }> = {};
             let maxTimestamp = 0;
 
             for (const rec of data) {
                 if (!rec || rec.value === null) continue;
                 if (!updateMap[rec.physio_id]) {
-                    updateMap[rec.physio_id] = { x: [], y: [] };
+                    updateMap[rec.physio_id] = { x: [], y: [], lo: [], hi: [] };
                 }
                 updateMap[rec.physio_id].x.push(rec.time);
                 updateMap[rec.physio_id].y.push(rec.value);
+                if (rec.min !== undefined && rec.max !== undefined) {
+                    updateMap[rec.physio_id].lo.push(rec.min);
+                    updateMap[rec.physio_id].hi.push(rec.max);
+                }
                 if (rec.time > maxTimestamp) maxTimestamp = rec.time;
             }
 
@@ -514,7 +548,9 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
             // --- Append ECG data ---
             const ecgData = updateMap['NOM_ECG_ELEC_POTL_II'];
-            if (ecgData && dataSeriesRefs.current.rawEcg) {
+            if (ecgData && hasBand(ecgData) && ecgBandRef.current) {
+                shadeGaps(gapStateRef.current.rawEcg, appendBandSafe(ecgBandRef.current, ecgData.x, ecgData.lo, ecgData.hi, gapBreakSecRef.current));
+            } else if (ecgData && dataSeriesRefs.current.rawEcg) {
                 shadeGaps(gapStateRef.current.rawEcg, appendSafe(dataSeriesRefs.current.rawEcg, ecgData.x, ecgData.y, gapBreakSecRef.current));
             }
 

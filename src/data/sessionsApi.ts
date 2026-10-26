@@ -21,6 +21,9 @@ export interface SessionDataRecord {
     time: number;
     physio_id: string;
     value: number | null;
+    /** Bucket range, sent on aggregated (1-/5-min) waveform rows only. */
+    min?: number | null;
+    max?: number | null;
 }
 
 export interface SessionDataResponse {

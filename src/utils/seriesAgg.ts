@@ -56,6 +56,42 @@ export const rawWithGapBreaks = (
 };
 
 /**
+ * Min/max envelope rows for an aggregated replay waveform (an averaged ECG is a
+ * flat line, so the bucket range is drawn instead). Continues from `lastX`, the
+ * last x already in the series: points at or before it are dropped so the
+ * series stays ascending, and a gap over `gapSec` gets the same NaN break as
+ * rawWithGapBreaks. Returns the gaps it broke across, for shading.
+ */
+export const bandWithGapBreaks = (
+    x: number[],
+    lo: (number | null)[],
+    hi: (number | null)[],
+    gapSec: number,
+    lastX: number = Number.NEGATIVE_INFINITY,
+): { bx: number[]; blo: number[]; bhi: number[]; gaps: { start: number; end: number }[] } => {
+    const bx: number[] = [];
+    const blo: number[] = [];
+    const bhi: number[] = [];
+    const gaps: { start: number; end: number }[] = [];
+    let prev = lastX;
+    for (let i = 0; i < x.length; i++) {
+        const cx = x[i];
+        if (cx <= prev) continue;
+        if (prev !== Number.NEGATIVE_INFINITY && cx - prev > gapSec) {
+            gaps.push({ start: prev, end: cx });
+            bx.push(cx - 0.001);
+            blo.push(Number.NaN);
+            bhi.push(Number.NaN);
+        }
+        bx.push(cx);
+        blo.push(lo[i] === null ? Number.NaN : lo[i] as number);
+        bhi.push(hi[i] === null ? Number.NaN : hi[i] as number);
+        prev = cx;
+    }
+    return { bx, blo, bhi, gaps };
+};
+
+/**
  * Bins a raw (x in epoch seconds, y) numeric trend into fixed-width time-bucket
  * averages for the live aggregation view. Each bucket is plotted at its CENTER
  * (so the newest bin sits near the live right edge — start-of-bucket would lag a
