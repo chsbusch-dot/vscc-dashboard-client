@@ -20,6 +20,10 @@
     "react-dom": "^19.2.0",
     "scichart": "^5.2.35"
   },
+  "trustedDependencies": [
+    "esbuild",
+    "fsevents"
+  ],
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@testing-library/jest-dom": "^6.9.1",

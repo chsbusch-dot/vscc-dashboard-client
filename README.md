@@ -64,11 +64,11 @@ the latest VSCapture automatically; no separate setup is needed.
 
 ## Getting started
 
-**Prerequisites:** Node.js 20+ and npm.
+**Prerequisites:** [Bun](https://bun.sh) 1.4+.
 
 ```bash
-npm install        # install dependencies
-npm run dev        # Vite dev server with HMR (binds --host for LAN access)
+bun install        # install dependencies
+bun run dev        # Vite dev server with HMR (binds --host for LAN access)
 ```
 
 The dashboard targets the backend on the host it is served from: MQTT at
@@ -84,11 +84,11 @@ so a reverse proxy in front of the stack must route those paths. Open
 
 | Command | Description |
 | --- | --- |
-| `npm run dev` | Vite dev server with hot reload |
-| `npm run build` | Type-check (`tsc -b`) + production build — **the authoritative CI gate** |
-| `npm run lint` | ESLint with type-aware rules |
-| `npm run test` | Vitest unit tests |
-| `npm run preview` | Serve the production build locally |
+| `bun run dev` | Vite dev server with hot reload |
+| `bun run build` | Type-check (`tsc -b`) + production build — **the authoritative CI gate** |
+| `bun run lint` | ESLint with type-aware rules |
+| `bun run test` | Vitest unit tests |
+| `bun run preview` | Serve the production build locally |
 
 ---
 
@@ -149,7 +149,7 @@ and are intentionally exempt from some React/ESLint rules. When working in these
 SciChart Community Edition expires every **6 months** and charts will show a license error after expiry. Refresh with:
 
 ```bash
-npm install scichart@latest && npm install
+bun add scichart@latest
 ```
 
 ---
