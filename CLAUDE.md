@@ -10,8 +10,8 @@ React + Vite + MUI dashboard for live/historic VSCapture vitals (SciChart, MQTT)
 Before pushing, run locally:
 
 ```bash
-npm ci
-npm run lint && npm test && npm run build
+bun install --frozen-lockfile
+bun run lint && bun run test && bun run build
 ```
 
 ## Conventions

@@ -4,14 +4,14 @@
 # The app targets the host it is served from (override with VITE_VSCC_HOST
 # as a build arg if the backend lives elsewhere).
 
-FROM node:22-alpine AS build
+FROM oven/bun:1.4.4-alpine AS build
 WORKDIR /app
 ARG VITE_VSCC_HOST=
 ENV VITE_VSCC_HOST=$VITE_VSCC_HOST
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 COPY . .
-RUN npm run build
+RUN bun run build
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
