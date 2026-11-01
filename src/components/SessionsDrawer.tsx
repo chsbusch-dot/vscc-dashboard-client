@@ -42,6 +42,7 @@ import {
     type SessionSignals,
 } from '../data/sessionsApi';
 import { formatDuration, isCommunitySignal, signalDisplayLabel } from '../utils/sessionFormat';
+import { createListRequestGate, removeSession } from '../utils/sessionList';
 import { formatFullTime, type TimeDisplayMode } from '../utils/timeFormat';
 
 const LIST_POLL_INTERVAL_MS = 10000;
@@ -285,6 +286,7 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
     const [snackOpen, setSnackOpen] = useState(false);
     const [signalsCache, setSignalsCache] = useState<Record<number, SignalsCacheEntry>>({});
     const signalsInFlight = useRef<Set<number>>(new Set());
+    const [listGate] = useState(createListRequestGate);
 
     const showSnack = useCallback((next: SnackState) => {
         setSnack(next);
@@ -293,16 +295,20 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
 
     const refresh = useCallback(async (showSpinner = false) => {
         if (showSpinner) setListLoading(true);
+        const ticket = listGate.issue();
         try {
             const list = await fetchSessions();
+            // An older request that answered late must not overwrite a newer list
+            if (!listGate.accept(ticket)) return;
             setSessions(list);
             setListError(null);
         } catch (err) {
+            if (!listGate.accept(ticket)) return;
             setListError(`Could not fetch sessions: ${errorMessage(err)}`);
         } finally {
             if (showSpinner) setListLoading(false);
         }
-    }, []);
+    }, [listGate]);
 
     // Poll the session list every 10s while the drawer is open
     useEffect(() => {
@@ -341,8 +347,10 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
     }, [open, sessions, signalsCache]);
 
     const handlePatched = useCallback((updated: SessionInfo) => {
+        // A poll still in flight would revert the edit until the next tick
+        listGate.invalidate();
         setSessions(prev => prev.map(s => (s.id === updated.id ? updated : s)));
-    }, []);
+    }, [listGate]);
 
     const handleLoad = (session: SessionInfo) => {
         // Stop any active live stream via the Sidebar's registered stop handler.
@@ -418,6 +426,10 @@ const SessionsDrawer: React.FC<SessionsDrawerProps> = ({ open, onClose }) => {
         try {
             const result = await deleteSession(session.id);
             if (result.ok) {
+                // Drop the row now and void any list request still in flight:
+                // it may have been answered before the delete committed.
+                listGate.invalidate();
+                setSessions(prev => removeSession(prev, session.id));
                 showSnack({
                     severity: 'success',
                     message: `Deleted session #${session.id} (${result.deleted_data_rows ?? 0} data rows removed)`,
