@@ -23,6 +23,7 @@ import { PHYSIO_META, type PhysioId } from '../data/constants';
 import { getClinicalColor } from '../utils/colors';
 import { DataSourceModal } from './DataSourceModal';
 import { isMqttTelemetryMessage, processRawData, selectFreshRecords } from '../utils/dataParser';
+import { addonTopics, tapLiveMessage } from '../addons';
 
 const StyledButton = styled(Button)(({ theme, color }) => ({
     ...(color === 'error' && { backgroundColor: theme.palette.error.main, color: theme.palette.error.contrastText, '&:hover': { backgroundColor: theme.palette.error.dark } }),
@@ -336,6 +337,7 @@ const Sidebar = () => {
         if (statusRef.current === 'Paused') return;
         try {
             const message: unknown = JSON.parse(payload.toString());
+            tapLiveMessage(topic, message); // add-on panels see every frame, core's filter below is unchanged
             if (!isMqttTelemetryMessage(message)) return;
             const { time, physio_id, value, device_id } = message;
             if (!physio_id) return;
@@ -375,6 +377,8 @@ const Sidebar = () => {
                         });
                     }
                 });
+                // Topics only add-ons read; core finds no mapping for them and drops their samples.
+                addonTopics.forEach(topic => client.subscribe(topic, { qos: 0 }));
             });
             client.on('message', handleMqttMessage);
             client.on('error', (err) => { console.error("MQTT error:", err); handleStop(); });

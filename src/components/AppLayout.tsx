@@ -31,6 +31,7 @@ import AnnotationsDialog from './AnnotationsDialog';
 import LayoutsDialog from './LayoutsDialog';
 import RecordingIndicator from './RecordingIndicator';
 import { getZoneLabel } from '../utils/timeFormat';
+import AddonPanels from '../addons/AddonPanels';
 
 const drawerWidth = 300;
 
@@ -183,6 +184,8 @@ const AppLayout = () => {
                         showResp={state.advancedCharts.resp}
                     />
                 )}
+
+                <AddonPanels />
             </Box>
 
             <SessionsDrawer open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
