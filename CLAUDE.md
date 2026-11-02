@@ -21,6 +21,9 @@ bun run lint && bun run test && bun run build
   (e.g. `src/utils/dataParser.ts`, `src/components/Sidebar.tsx` — they parse
   untyped external JSON as `any`). **Don't disable rules repo-wide to silence
   lint**; if you properly type one of these, remove its override in the same PR.
+- **Add-on hook** (`src/addons/`, README "Add-on panels"): keep it generic. No
+  product-specific ids, names or panels in core; an external build injects them via
+  `VSCC_ADDONS`. Core's community filter (`isCommunitySignal`) stays as is.
 - **Tests** live next to code as `*.test.ts(x)` and run in jsdom. The parsing
   logic in `src/utils/dataParser.ts` (`processRawData`, `selectFreshRecords`) is
   pure — cover new branches there with unit tests.

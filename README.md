@@ -124,8 +124,64 @@ Each channel is mapped independently, so you can mix sources (e.g. live MQTT vit
 | `src/components/AnnotationsDialog.tsx` | Add / list / delete event markers |
 | `src/components/HealthIndicator.tsx` | Capture-health header chip (polls `/api/status`) |
 | `src/data/sessionsApi.ts` | Typed REST client for sessions, quality, annotations, status, capture-config |
+| `src/addons/` | Add-on panel hook: build-time entry point, live waveform tap, panel slot (see below) |
 
 **Stack:** React 19 · TypeScript 5.9 · Vite 7 · SciChart.js 5 · MUI 7 · mqtt.js 5.
+
+---
+
+## Add-on panels
+
+Core charts community (MMS) signals only. A separate build can add its own panels for other
+waveform ids without patching this repo, through one build-time entry point. Core still
+renders nothing for those ids.
+
+**Entry point.** `src/addons/index.ts` imports the module `vscc-addons`. By default that
+resolves to `src/addons/none.ts`, which registers nothing, so the public build is unchanged.
+To inject a module, set `VSCC_ADDONS` (absolute path, or relative to the working directory)
+for the build or dev server:
+
+```bash
+VSCC_ADDONS=/abs/path/to/addons.tsx bun run build
+```
+
+The module default-exports `DashboardAddons` (types in `src/addons/types.ts`):
+
+```ts
+interface DashboardAddons {
+  topics?: readonly string[];      // extra live MQTT topics, subscribed on connect
+  panels?: readonly AddonPanel[];  // mounted under the core charts, in this order
+}
+interface AddonPanel { id: string; component: ComponentType<AddonPanelProps> }
+interface AddonPanelProps { subscribeWaveform: SubscribeWaveform }
+type SubscribeWaveform =
+  (ids: readonly string[], listener: (frame: WaveformFrame) => void) => () => void;
+interface WaveformFrame { topic: string; samples: WaveformSample[] }
+// WaveformSample = { time: number; physio_id: string; value: number | null; device_id?: string }
+```
+
+**Data.** A panel calls `subscribeWaveform(ids, listener)`, typically in a `useEffect` that
+returns the unsubscribe function. The listener gets one frame per live MQTT message that
+carries a requested `physio_id`: the message's samples for those ids, in arrival order, with
+timestamps as received. Nothing is resampled or merged. Frames flow while live view plays
+and stop while it is paused. The tap runs before core's topic mapping, and core's filtering
+is unchanged: core drops samples on topics it has no mapping for, as before.
+
+**Render.** `AddonPanels` mounts each panel in a `data-addon-panel="<id>"` box below the core
+charts. With no panels registered it renders nothing.
+
+Notes for add-on authors:
+
+- List only topics core does not subscribe itself (`mp50/VitalSigns`, `mp50/HF-ECG`,
+  `mp50/HF-PLETH`, `mp50/HF-RESP` by default), and no wildcard that overlaps them. Core's
+  topics reach the tap anyway, and an overlapping subscription can make the broker deliver a
+  message twice, which core would then chart twice.
+- With `VSCC_ADDONS` set, the build dedupes React, React DOM, MUI and Emotion so the module
+  shares this build's copies, and the dev server may read the module's directory. For type
+  checking in the consuming repo, map `vscc-addons` in its own tsconfig and import the types
+  from this repo's `src/addons/types.ts`.
+- A panel that throws while rendering takes the page down with it; a listener that throws is
+  caught and logged.
 
 ---
 

@@ -22,7 +22,10 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+
+    /* Add-on entry point, aliased the same way in vite.config.ts */
+    "paths": { "vscc-addons": ["./src/addons/none.ts"] }
   },
   "include": ["src"]
 }
