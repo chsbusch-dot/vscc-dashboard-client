@@ -23,7 +23,9 @@ bun run lint && bun run test && bun run build
   lint**; if you properly type one of these, remove its override in the same PR.
 - **Add-on hook** (`src/addons/`, README "Add-on panels"): keep it generic. No
   product-specific ids, names or panels in core; an external build injects them via
-  `VSCC_ADDONS`. Core's community filter (`isCommunitySignal`) stays as is.
+  `VSCC_ADDONS`. Core's community filter (`isCommunitySignal`) stays MMS-only
+  except for ids an add-on registers in `signals` (WOR-1104); metadata lookups go
+  through `signalMeta()` in `src/data/signalMeta.ts`, never `PHYSIO_META` directly.
 - **Tests** live next to code as `*.test.ts(x)` and run in jsdom. The parsing
   logic in `src/utils/dataParser.ts` (`processRawData`, `selectFreshRecords`) is
   pure — cover new branches there with unit tests.

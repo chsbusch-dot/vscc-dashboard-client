@@ -19,7 +19,8 @@ import {
 } from '@mui/material';
 import mqtt, { type MqttClient } from 'mqtt';
 import { useDashboard, type TelemetryRecord, type ProviderId, type WaveformId } from '../data/DashboardContext';
-import { PHYSIO_META, type PhysioId } from '../data/constants';
+import { type PhysioId } from '../data/constants';
+import { SERIES_IDS, signalMeta } from '../data/signalMeta';
 import { getClinicalColor } from '../utils/colors';
 import { DataSourceModal } from './DataSourceModal';
 import { isMqttTelemetryMessage, processRawData, selectFreshRecords } from '../utils/dataParser';
@@ -476,13 +477,13 @@ const Sidebar = () => {
                             <Button variant="outlined" size="small" onClick={actions.deselectAll}>Deselect All</Button>
                         </Box>
                         <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
-                            <List dense>
-                                {(Object.keys(PHYSIO_META) as PhysioId[]).map((id) => (
+                            <List dense aria-label="Series">
+                                {SERIES_IDS.map((id) => (
                                     <ListItem key={id} dense onClick={() => actions.togglePhysioId(id)} sx={{ cursor: 'pointer', py: 0 }}>
                                         <ListItemIcon>
                                             <Checkbox edge="start" checked={!!state.selectedPhysioIds[id]} tabIndex={-1} disableRipple sx={{ color: getClinicalColor(id), '&.Mui-checked': { color: getClinicalColor(id) } }} />
                                         </ListItemIcon>
-                                        <ListItemText primary={PHYSIO_META[id].name} />
+                                        <ListItemText primary={signalMeta(id)?.name ?? id} />
                                     </ListItem>
                                 ))}
                             </List>

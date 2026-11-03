@@ -1,11 +1,13 @@
 /* eslint-disable react-refresh/only-export-components -- test module, never hot-reloaded */
 // A stand-in add-on module for tests, shaped like what VSCC_ADDONS points at.
-// The id and topic are synthetic: no device sends them.
+// The ids and topic are synthetic: no device sends them.
 import { useEffect, useState } from 'react';
 import type { AddonPanelProps, DashboardAddons, WaveformFrame } from './types';
 
 export const SYNTHETIC_ID = 'SYN_ADDON_WAVE';
 export const SYNTHETIC_TOPIC = 'synthetic/HF-ADDON';
+/** A series the add-on registers in `signals`; SYNTHETIC_ID stays unregistered. */
+export const SYNTHETIC_SIGNAL_ID = 'SYN_ADDON_INDEX';
 
 /** Every frame the dummy panel received, in order. */
 export const receivedFrames: WaveformFrame[] = [];
@@ -22,6 +24,9 @@ const DummyPanel = ({ subscribeWaveform }: AddonPanelProps) => {
 const addons: DashboardAddons = {
     topics: [SYNTHETIC_TOPIC],
     panels: [{ id: 'synthetic-dummy', component: DummyPanel }],
+    signals: {
+        [SYNTHETIC_SIGNAL_ID]: { name: 'Synthetic Index', unit: 'syn', group: 'Synthetic Group', color: '#123456' },
+    },
 };
 
 export default addons;

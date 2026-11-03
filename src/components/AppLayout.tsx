@@ -20,7 +20,7 @@ import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize';
 import { SciChartVerticalGroup } from 'scichart';
 import Sidebar from './Sidebar';
 import { useDashboard } from '../data/DashboardContext';
-import { PHYSIO_META } from '../data/constants';
+import { signalMeta } from '../data/signalMeta';
 import ChartContainer from './ChartContainer';
 import AdvancedCharts from './AdvancedCharts';
 import SessionsDrawer from './SessionsDrawer';
@@ -56,13 +56,17 @@ const AppLayout = () => {
         }
 
         const groups = activePhysioIds.reduce((acc, id) => {
-            const groupName = PHYSIO_META[id as keyof typeof PHYSIO_META].group;
+            // An id nobody registers (e.g. from a layout saved by another build) has no chart
+            const groupName = signalMeta(id)?.group;
+            if (groupName === undefined) {
+                return acc;
+            }
             if (!acc[groupName]) {
                 acc[groupName] = [];
             }
-            acc[groupName].push(id as keyof typeof PHYSIO_META);
+            acc[groupName].push(id);
             return acc;
-        }, {} as Record<string, (keyof typeof PHYSIO_META)[]>);
+        }, {} as Record<string, string[]>);
 
         return Object.entries(groups);
     }, [state.selectedPhysioIds]);

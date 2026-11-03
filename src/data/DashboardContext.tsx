@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useRef, useCallback } from 'react';
-import { PHYSIO_META, type PhysioId } from './constants';
+import { type PhysioId } from './constants';
+import { SERIES_IDS } from './signalMeta';
 import { loadTimeDisplay, saveTimeDisplay, type TimeDisplayMode } from '../utils/timeFormat';
 import { resolveBackendUrls, type BackendUrls } from '../utils/backendUrls';
 import { GAP_BREAK_SEC } from '../utils/seriesAgg';
@@ -52,7 +53,8 @@ export interface DashboardState {
     timeDisplay: TimeDisplayMode;
     /** Short informational note shown in the header (e.g. "Loaded session #3"). */
     statusNote: string | null;
-    selectedPhysioIds: Record<PhysioId, boolean>;
+    /** Keyed by series id: core PHYSIO_META ids and any add-on signal ids. */
+    selectedPhysioIds: Record<string, boolean>;
     advancedCharts: {
         rawPleth: boolean;
         ecg: boolean;
@@ -86,7 +88,7 @@ export interface DashboardActions {
     setAggregation: (agg: DashboardState['aggregation']) => void;
     setTimeDisplay: (mode: TimeDisplayMode) => void;
     setStatusNote: (note: string | null) => void;
-    togglePhysioId: (id: PhysioId) => void;
+    togglePhysioId: (id: string) => void;
     selectAll: () => void;
     deselectAll: () => void;
     toggleAdvancedChart: (chart: keyof DashboardState['advancedCharts']) => void;
@@ -186,10 +188,10 @@ const initialState: DashboardState = {
     aggregation: 'raw',
     timeDisplay: loadTimeDisplay(),
     statusNote: null,
-    selectedPhysioIds: (Object.keys(PHYSIO_META) as PhysioId[]).reduce((acc, key) => {
+    selectedPhysioIds: SERIES_IDS.reduce((acc, key) => {
         acc[key] = ['NOM_PULS_OXIM_SAT_O2', 'NOM_PLETH_PULS_RATE', 'NOM_RESP_RATE'].includes(key);
         return acc;
-    }, {} as Record<PhysioId, boolean>),
+    }, {} as Record<string, boolean>),
     advancedCharts: { rawPleth: true, ecg: true, resp: true },
     loadedSession: null,
     replayEmpty: false,
@@ -262,11 +264,11 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setStatusNote: (statusNote) => dispatch({ statusNote }),
         togglePhysioId: (id) => dispatch({ selectedPhysioIds: { ...state.selectedPhysioIds, [id]: !state.selectedPhysioIds[id] } }),
         selectAll: () => {
-            const allIds = (Object.keys(PHYSIO_META) as PhysioId[]).reduce((acc, key) => { acc[key] = true; return acc; }, {} as Record<PhysioId, boolean>);
+            const allIds = SERIES_IDS.reduce((acc, key) => { acc[key] = true; return acc; }, {} as Record<string, boolean>);
             dispatch({ selectedPhysioIds: allIds });
         },
         deselectAll: () => {
-            const allIds = (Object.keys(PHYSIO_META) as PhysioId[]).reduce((acc, key) => { acc[key] = false; return acc; }, {} as Record<PhysioId, boolean>);
+            const allIds = SERIES_IDS.reduce((acc, key) => { acc[key] = false; return acc; }, {} as Record<string, boolean>);
             dispatch({ selectedPhysioIds: allIds });
         },
         toggleAdvancedChart: (chart) => dispatch({ advancedCharts: { ...state.advancedCharts, [chart]: !state.advancedCharts[chart] } }),

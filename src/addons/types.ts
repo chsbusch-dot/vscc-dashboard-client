@@ -25,10 +25,27 @@ export interface AddonPanel {
     component: ComponentType<AddonPanelProps>;
 }
 
+/** Display metadata of one series: the shape of a PHYSIO_META entry. */
+export interface SignalMeta {
+    /** Label in the live menu, the session legend and the chart's stats box and tooltip. */
+    name: string;
+    /** Y-axis title and tooltip unit, '' for none. */
+    unit: string;
+    /** Selected series with the same group share one chart. */
+    group: string;
+    /** CSS colour of the line, the checkbox and the stats box. */
+    color: string;
+}
+
 /** What the module behind the `vscc-addons` entry point default-exports. */
 export interface DashboardAddons {
     /** Extra live topics to subscribe on connect. Core drops their samples, add-ons read them. */
     topics?: readonly string[];
     /** Panels mounted in the slot under the core charts, in this order. */
     panels?: readonly AddonPanel[];
+    /**
+     * Extra series keyed by physio_id, listed after the core ones in the live menu
+     * and shown in the session legend. A core id keeps its core metadata.
+     */
+    signals?: Readonly<Record<string, SignalMeta>>;
 }
