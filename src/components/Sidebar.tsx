@@ -24,7 +24,7 @@ import { SERIES_IDS, signalMeta } from '../data/signalMeta';
 import { getClinicalColor } from '../utils/colors';
 import { DataSourceModal } from './DataSourceModal';
 import { isMqttTelemetryMessage, processRawData, selectFreshRecords } from '../utils/dataParser';
-import { addonTopics, tapLiveMessage } from '../addons';
+import { addonTopics, addonWaveIds, tapLiveMessage } from '../addons';
 
 const StyledButton = styled(Button)(({ theme, color }) => ({
     ...(color === 'error' && { backgroundColor: theme.palette.error.main, color: theme.palette.error.contrastText, '&:hover': { backgroundColor: theme.palette.error.dark } }),
@@ -339,13 +339,24 @@ const Sidebar = () => {
         try {
             const message: unknown = JSON.parse(payload.toString());
             tapLiveMessage(topic, message); // add-on panels see every frame, core's filter below is unchanged
-            if (!isMqttTelemetryMessage(message)) return;
-            const { time, physio_id, value, device_id } = message;
-            if (!physio_id) return;
-
             const mappedId = (Object.keys(mappingsRef.current) as WaveformId[]).find(
                 id => mappingsRef.current[id].mappings.mqtt === topic
             );
+
+            // A declared add-on wave topic: its charted ids join the HF buffer like a core wave.
+            const waveIds = mappedId ? undefined : addonWaveIds.get(topic);
+            if (waveIds) {
+                const samples = (Array.isArray(message) ? message as unknown[] : [message]).filter(isMqttTelemetryMessage);
+                for (const s of samples) {
+                    if (!waveIds.has(s.physio_id)) continue;
+                    (hfDataBuffer.current[topic] ??= []).push({ time: s.time, physio_id: s.physio_id as PhysioId, value: s.value, device_id: s.device_id || 'addon' });
+                }
+                return;
+            }
+
+            if (!isMqttTelemetryMessage(message)) return;
+            const { time, physio_id, value, device_id } = message;
+            if (!physio_id) return;
 
             // Drop incoming payload entirely if globally toggled off
             if (!mappedId || !togglesRef.current[mappedId]) return;
@@ -378,7 +389,7 @@ const Sidebar = () => {
                         });
                     }
                 });
-                // Topics only add-ons read; core finds no mapping for them and drops their samples.
+                // Add-on topics: core charts only the ids `waveTopics` declares, the rest only reach the tap.
                 addonTopics.forEach(topic => client.subscribe(topic, { qos: 0 }));
             });
             client.on('message', handleMqttMessage);

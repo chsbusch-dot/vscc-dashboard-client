@@ -9,7 +9,7 @@ import { SERIES_IDS, signalMeta } from '../data/signalMeta';
 import { getClinicalColor } from '../utils/colors';
 import { isCommunitySignal, signalDisplayLabel } from '../utils/sessionFormat';
 import { DataProbe, dashboardProbe, fakeBroker } from './testHarness';
-import { SYNTHETIC_ID, SYNTHETIC_SIGNAL_ID } from './syntheticAddons.fixture';
+import { SYNTHETIC_ID, SYNTHETIC_SIGNAL_ID, SYNTHETIC_WAVE_ID } from './syntheticAddons.fixture';
 
 vi.mock('vscc-addons', () => import('./syntheticAddons.fixture'));
 vi.mock('mqtt', async () => (await import('./testHarness')).mqttModule);
@@ -43,7 +43,7 @@ describe('add-on signals', () => {
     });
 
     it('merges the registered series after the core ones, a core id keeping its core metadata', () => {
-        expect(SERIES_IDS).toEqual([...CORE_IDS, SYNTHETIC_SIGNAL_ID]);
+        expect(SERIES_IDS).toEqual([...CORE_IDS, SYNTHETIC_SIGNAL_ID, SYNTHETIC_WAVE_ID]);
         expect(signalMeta(SYNTHETIC_SIGNAL_ID)).toEqual({ name: 'Synthetic Index', unit: 'syn', group: 'Synthetic Group', color: '#123456' });
         expect(signalMeta('NOM_PULS_OXIM_SAT_O2')).toBe(PHYSIO_META.NOM_PULS_OXIM_SAT_O2);
         expect(getClinicalColor(SYNTHETIC_SIGNAL_ID)).toBe('#123456');
@@ -56,7 +56,7 @@ describe('add-on signals', () => {
 
     it('lists the series in the live menu and charts it from a core topic', () => {
         const { container } = render(<DashboardProvider><AppLayout /><DataProbe /></DashboardProvider>);
-        expect(menuNames()).toEqual([...CORE_IDS.map(id => PHYSIO_META[id].name), 'Synthetic Index']);
+        expect(menuNames()).toEqual([...CORE_IDS.map(id => PHYSIO_META[id].name), 'Synthetic Index', 'Synthetic Wave']);
         const charted = () => [...container.querySelectorAll('[data-core-chart]')].map(el => el.getAttribute('data-core-chart'));
         expect(charted()).not.toContain(SYNTHETIC_SIGNAL_ID);
 
