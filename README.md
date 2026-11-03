@@ -133,8 +133,8 @@ Each channel is mapped independently, so you can mix sources (e.g. live MQTT vit
 ## Add-on panels
 
 Core charts community (MMS) signals only. A separate build can add its own panels for other
-waveform ids without patching this repo, through one build-time entry point. Core still
-renders nothing for those ids.
+waveform ids, and its own series to the core charts, without patching this repo, through one
+build-time entry point. Core still renders nothing for panel ids it has no series for.
 
 **Entry point.** `src/addons/index.ts` imports the module `vscc-addons`. By default that
 resolves to `src/addons/none.ts`, which registers nothing, so the public build is unchanged.
@@ -151,7 +151,9 @@ The module default-exports `DashboardAddons` (types in `src/addons/types.ts`):
 interface DashboardAddons {
   topics?: readonly string[];      // extra live MQTT topics, subscribed on connect
   panels?: readonly AddonPanel[];  // mounted under the core charts, in this order
+  signals?: Readonly<Record<string, SignalMeta>>;  // extra series, keyed by physio_id
 }
+interface SignalMeta { name: string; unit: string; group: string; color: string }
 interface AddonPanel { id: string; component: ComponentType<AddonPanelProps> }
 interface AddonPanelProps { subscribeWaveform: SubscribeWaveform }
 type SubscribeWaveform =
@@ -169,6 +171,15 @@ is unchanged: core drops samples on topics it has no mapping for, as before.
 
 **Render.** `AddonPanels` mounts each panel in a `data-addon-panel="<id>"` box below the core
 charts. With no panels registered it renders nothing.
+
+**Series.** `signals` registers extra series for core's own charts. `src/data/signalMeta.ts`
+merges them with `PHYSIO_META` in one lookup (`signalMeta(id)`, `SERIES_IDS`) that the live
+series menu, the chart grouping, the chart titles, units, tooltips and colours, and the session
+legend all read. Registered series follow the core ones in the menu, in insertion order, and
+`isCommunitySignal` accepts them, so the session legend lists them. A core id keeps its core
+metadata: an add-on cannot rename or recolour an MMS series. The series charts live only when
+its samples arrive on a topic core maps (e.g. `mp50/VitalSigns`); samples on the add-on's own
+topics still reach only its panels. Without add-ons the menu is exactly `PHYSIO_META`.
 
 Notes for add-on authors:
 

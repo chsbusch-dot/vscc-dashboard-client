@@ -1,9 +1,10 @@
-import { PHYSIO_META, type PhysioId } from '../data/constants';
+import { signalMeta } from '../data/signalMeta';
 
 export const getClinicalColor = (id: string): string => {
-    // Check if the ID exists in our metadata (The "Dumb" Data)
-    if (id in PHYSIO_META) {
-        return PHYSIO_META[id as PhysioId].color;
+    // Check if the ID has metadata, core or add-on (The "Dumb" Data)
+    const meta = signalMeta(id);
+    if (meta) {
+        return meta.color;
     }
 
     // Fallbacks for known waveform IDs that might not be in the sidebar selection list

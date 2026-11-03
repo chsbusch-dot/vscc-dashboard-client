@@ -2,17 +2,14 @@
  * Small pure formatting helpers for the Sessions and Settings features.
  */
 
-import { PHYSIO_META } from '../data/constants';
-
-// Widened view of PHYSIO_META so arbitrary backend physio_id strings can be looked up.
-const SIGNAL_META: Record<string, { name?: string } | undefined> = PHYSIO_META;
+import { signalMeta } from '../data/signalMeta';
 
 /**
- * Maps a backend physio_id to its friendly display name from PHYSIO_META,
- * falling back to the raw id for signals we have no metadata for.
+ * Maps a backend physio_id to its friendly display name (PHYSIO_META or an
+ * add-on's signals), falling back to the raw id for signals we have no metadata for.
  */
 export const signalDisplayLabel = (physioId: string): string =>
-    SIGNAL_META[physioId]?.name ?? physioId;
+    signalMeta(physioId)?.name ?? physioId;
 
 /**
  * MMS waveform physio_ids the community edition renders (PHYSIO_META holds only
@@ -31,11 +28,12 @@ const COMMUNITY_WAVEFORM_IDS = new Set<string>([
 /**
  * Whether a physio_id belongs to the MMS-only community edition. Used to keep
  * non-MMS signals still physically present in the database (e.g. EEG/BIS channels
- * from earlier captures) out of the session signal legend. Display-only filter —
- * ingestion and storage are unaffected.
+ * from earlier captures) out of the session signal legend. Series an add-on
+ * registers in its `signals` pass too, so a build with that add-on lists them.
+ * Display-only filter — ingestion and storage are unaffected.
  */
 export const isCommunitySignal = (physioId: string): boolean =>
-    physioId in PHYSIO_META || COMMUNITY_WAVEFORM_IDS.has(physioId);
+    signalMeta(physioId) !== undefined || COMMUNITY_WAVEFORM_IDS.has(physioId);
 
 /**
  * Formats a duration given in seconds as a compact human string,

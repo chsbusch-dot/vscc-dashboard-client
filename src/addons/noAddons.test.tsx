@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AppLayout from '../components/AppLayout';
+import { PHYSIO_META } from '../data/constants';
 import { DashboardProvider } from '../data/DashboardContext';
+import { SERIES_IDS, signalMeta } from '../data/signalMeta';
+import { isCommunitySignal } from '../utils/sessionFormat';
 import { addonPanels, addonTopics } from './index';
 import { DataProbe, dashboardProbe, fakeBroker } from './testHarness';
 
@@ -45,5 +48,15 @@ describe('add-on panel hook with the no-op default', () => {
         });
         expect(main?.innerHTML).toBe(before);
         expect(dashboardProbe.dataRef?.current.SYN_ADDON_WAVE).toBeUndefined();
+    });
+
+    it('offers exactly the core series', () => {
+        expect(SERIES_IDS).toEqual(Object.keys(PHYSIO_META));
+        expect(signalMeta('SYN_ADDON_INDEX')).toBeUndefined();
+        expect(isCommunitySignal('SYN_ADDON_INDEX')).toBe(false);
+
+        render(<DashboardProvider><AppLayout /></DashboardProvider>);
+        const names = within(screen.getByRole('list', { name: 'Series' })).getAllByRole('listitem').map(li => li.textContent);
+        expect(names).toEqual(Object.values(PHYSIO_META).map(meta => meta.name));
     });
 });

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Typography, Paper, Button } from '@mui/material';
-import { PHYSIO_META, type PhysioId } from '../data/constants';
+import { signalMeta } from '../data/signalMeta';
 import { getClinicalColor } from '../utils/colors';
 import { useDashboard } from '../data/DashboardContext';
 import { useSciChart } from '../hooks/useSciChart';
@@ -15,7 +15,7 @@ import { SymmetricWheelZoomModifier } from '../utils/symmetricWheelZoomModifier'
 
 interface ChartContainerProps {
     groupName: string;
-    physioIds: PhysioId[];
+    physioIds: string[];
     verticalGroup: SciChart.SciChartVerticalGroup;
 }
 
@@ -29,7 +29,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
     // visibleRangeChanged isn't echoed back as a user pan/zoom.
     const suppressReportRef = useRef(false);
     const sciChartSurfaceRef = useRef<SciChart.SciChartSurface | null>(null);
-    const dataSeriesRefs = useRef<Record<PhysioId, SciChart.XyDataSeries>>({} as Record<PhysioId, SciChart.XyDataSeries>);
+    const dataSeriesRefs = useRef<Record<string, SciChart.XyDataSeries>>({});
     const divElementId = `scichart-root-${groupName.replace(/\s/g, '')}`;
     
     const physioIdsRef = useRef(physioIds);
@@ -132,7 +132,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         surface.renderableSeries.clear();
         surface.chartModifiers.clear();
         surface.annotations.clear();
-        dataSeriesRefs.current = {} as Record<PhysioId, SciChart.XyDataSeries>;
+        dataSeriesRefs.current = {};
 
         // Configure X-Axis
         const now = Date.now() / 1000;
@@ -165,7 +165,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
         }
 
         // Configure Y-Axis
-        const units = new Set(physioIds.map(id => PHYSIO_META[id].unit).filter(Boolean));
+        const units = new Set(physioIds.map(id => signalMeta(id)?.unit).filter(Boolean));
         const yAxisTitle = units.size === 1 ? Array.from(units)[0] : "Value";
 
         const yAxisOptions: SciChart.INumericAxisOptions = {
@@ -266,10 +266,11 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                     // for both Local and UTC display modes.
                     const timeStr = formatChartTime(seriesInfo.xValue, timeDisplayRef.current, { millis: true });
 
-                    const unit = PHYSIO_META[seriesInfo.seriesName as PhysioId]?.unit || '';
+                    const meta = signalMeta(seriesInfo.seriesName);
+                    const unit = meta?.unit || '';
                     const value = (seriesInfo.yValue === undefined || Number.isNaN(seriesInfo.yValue)) ? '---' : seriesInfo.yValue.toFixed(2);
                     return [`Time: ${timeStr}`, 
-                    `${PHYSIO_META[seriesInfo.seriesName as PhysioId].name}: ${value} ${unit}`];
+                    `${meta?.name ?? seriesInfo.seriesName}: ${value} ${unit}`];
                 }
             })
         );
@@ -357,7 +358,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
             // Filter records relevant to this chart
             // We group updates by series to call appendRange once per series
-            const updates = {} as Record<PhysioId, { x: number[], y: number[] }>;
+            const updates = {} as Record<string, { x: number[], y: number[] }>;
             let maxTimestamp = 0;
             let chartReceivedData = false;
 
@@ -385,7 +386,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
 
             // Apply updates to SciChart
             Object.entries(updates).forEach(([id, data]) => {
-                const series = dataSeriesRefs.current[id as PhysioId];
+                const series = dataSeriesRefs.current[id];
                 if (!series) return;
 
                 // Append raw points incrementally — skipped in live binned mode,
@@ -630,7 +631,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
                         const idStats = displayStats[id] || { current: 'N/A', min: 'N/A', max: 'N/A' };
                         return (
                             <Box key={id} sx={{ mb: 1, borderLeft: `4px solid ${color}`, pl: 1 }}>
-                                <Typography variant="subtitle2" display="block" sx={{ fontWeight: 'bold', color: color }}>{PHYSIO_META[id].name}</Typography>
+                                <Typography variant="subtitle2" display="block" sx={{ fontWeight: 'bold', color: color }}>{signalMeta(id)?.name ?? id}</Typography>
                                 <Typography variant="h6" display="block" sx={{ color: color, fontWeight: 'bold' }}>
                                     {idStats.current}
                                 </Typography>
