@@ -65,4 +65,17 @@ describe('add-on panel hook with a registered panel', () => {
         expect(charted.join(',')).not.toContain(SYNTHETIC_ID);
         expect(container.innerHTML).not.toContain(SYNTHETIC_ID);
     });
+
+    it('keeps the panel when no series and no wave chart is selected (panels are not menu items)', () => {
+        const { container } = render(<DashboardProvider><AppLayout /></DashboardProvider>);
+        fireEvent.click(screen.getByRole('button', { name: 'Deselect All' }));
+        fireEvent.click(screen.getByRole('button', { name: /^Advanced Charts/ }));
+        for (const label of ['Raw PLETH Waveform', 'Raw ECG Waveform', 'Respiration Waveform']) {
+            fireEvent.click(screen.getByRole('checkbox', { name: label }));
+        }
+
+        expect(container.querySelector('[data-core-chart]')).toBeNull();
+        expect(screen.getByText('No data types selected.')).toBeTruthy();
+        expect(container.querySelector('[data-addon-panel="synthetic-dummy"]')).not.toBeNull();
+    });
 });

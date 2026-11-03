@@ -31,6 +31,7 @@ import AnnotationsDialog from './AnnotationsDialog';
 import LayoutsDialog from './LayoutsDialog';
 import RecordingIndicator from './RecordingIndicator';
 import { getZoneLabel } from '../utils/timeFormat';
+import { anyWaveChart } from '../utils/chartSelection';
 import AddonPanels from '../addons/AddonPanels';
 
 const drawerWidth = 300;
@@ -70,7 +71,9 @@ const AppLayout = () => {
 
         return Object.entries(groups);
     }, [state.selectedPhysioIds]);
-    
+
+    const wavesOn = anyWaveChart(state.advancedCharts);
+
     const getStatusText = () => {
         if (state.dataSource === 'upload' && state.recordCount > 0 && state.status !== 'Streaming' && state.status !== 'Paused') {
             return `${state.recordCount} records loaded`;
@@ -169,18 +172,19 @@ const AppLayout = () => {
             >
                 <Toolbar />
 
-                {chartGroups.length > 0 ? (
-                    chartGroups.map(([groupName, physioIds]) => (
-                        <ChartContainer key={groupName} groupName={groupName} physioIds={physioIds} verticalGroup={verticalGroup} />
-                    ))
-                ) : (
+                {chartGroups.map(([groupName, physioIds]) => (
+                    <ChartContainer key={groupName} groupName={groupName} physioIds={physioIds} verticalGroup={verticalGroup} />
+                ))}
+
+                {/* Only when no chart at all renders: a wave chart alone still fills the area. */}
+                {chartGroups.length === 0 && !wavesOn && (
                     <Box sx={{textAlign: 'center', mt: 4}}>
                         <Typography variant="h6">No data types selected.</Typography>
                         <Typography>Select data types from the sidebar to view charts.</Typography>
                     </Box>
                 )}
 
-                {(state.advancedCharts.rawPleth || state.advancedCharts.ecg || state.advancedCharts.resp) && (
+                {wavesOn && (
                     <AdvancedCharts
                         verticalGroup={verticalGroup}
                         showRawPleth={state.advancedCharts.rawPleth}
