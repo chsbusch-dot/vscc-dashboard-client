@@ -25,12 +25,21 @@ import { getClinicalColor } from '../utils/colors';
 import { DataSourceModal } from './DataSourceModal';
 import { isMqttTelemetryMessage, processRawData, selectFreshRecords } from '../utils/dataParser';
 import { addonTopics, addonWaveIds, tapLiveMessage } from '../addons';
+import { anySeriesSelected, anyWaveChart } from '../utils/chartSelection';
 
 const StyledButton = styled(Button)(({ theme, color }) => ({
     ...(color === 'error' && { backgroundColor: theme.palette.error.main, color: theme.palette.error.contrastText, '&:hover': { backgroundColor: theme.palette.error.dark } }),
     ...(color === 'success' && { backgroundColor: theme.palette.success.main, color: theme.palette.success.contrastText, '&:hover': { backgroundColor: theme.palette.success.dark } }),
     ...(color === 'warning' && { backgroundColor: theme.palette.warning.main, color: theme.palette.warning.contrastText, '&:hover': { backgroundColor: theme.palette.warning.dark } }),
 }));
+
+/** A dot on a tab button while that tab has at least one chart selected. A dot rather than
+ *  a fill, so it reads apart from the active-tab background. */
+const SelectedDot = () => (
+    <Box component="span" aria-hidden data-selected-dot sx={{ width: 8, height: 8, ml: 1, flexShrink: 0, borderRadius: '50%', bgcolor: 'success.main' }} />
+);
+const selectedTabProps = (label: string, selected: boolean) =>
+    selected ? { 'aria-label': `${label}, items selected`, title: `${label}, items selected` } : {};
 
 const Sidebar = () => {
     const { state, actions, stopStreamsRef } = useDashboard();
@@ -53,6 +62,8 @@ const Sidebar = () => {
     const [replaySpeed] = useState<1 | 2 | 4 | 8 | 16>(1);
     const replaySpeedRef = useRef(replaySpeed);
     const [activeTab, setActiveTab] = useState<'basic' | 'advanced'>('basic');
+    const basicSelected = anySeriesSelected(state.selectedPhysioIds);
+    const advancedSelected = anyWaveChart(state.advancedCharts);
     
     useEffect(() => { statusRef.current = state.status; }, [state.status]);
     useEffect(() => { replaySpeedRef.current = replaySpeed; }, [replaySpeed]);
@@ -477,8 +488,12 @@ const Sidebar = () => {
             {/* SECTION 4: Chart & Data Type Selectors (RESTORED) */}
             <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
                  <ToggleButtonGroup value={activeTab} exclusive onChange={(_, v: 'basic' | 'advanced' | null) => v && setActiveTab(v)} fullWidth size="small" sx={{ mb: 2, flexShrink: 0 }}>
-                    <ToggleButton value="basic">Basic Vitals</ToggleButton>
-                    <ToggleButton value="advanced">Advanced Charts</ToggleButton>
+                    <ToggleButton value="basic" {...selectedTabProps('Basic Vitals', basicSelected)}>
+                        Basic Vitals{basicSelected && <SelectedDot />}
+                    </ToggleButton>
+                    <ToggleButton value="advanced" {...selectedTabProps('Advanced Charts', advancedSelected)}>
+                        Advanced Charts{advancedSelected && <SelectedDot />}
+                    </ToggleButton>
                 </ToggleButtonGroup>
                 
                 {activeTab === 'basic' && (

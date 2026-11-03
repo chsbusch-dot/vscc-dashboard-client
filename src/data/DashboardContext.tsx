@@ -202,10 +202,6 @@ const dashboardReducer = (prev: DashboardState, action: Partial<DashboardState>)
     return { ...prev, ...action };
 };
 
-/** Every wave chart flag set to `on`, so Select All / Deselect All cover the wave charts too. */
-const setAllWaveCharts = (charts: DashboardState['advancedCharts'], on: boolean): DashboardState['advancedCharts'] =>
-    Object.fromEntries(Object.keys(charts).map(key => [key, on])) as DashboardState['advancedCharts'];
-
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
 
 export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -269,11 +265,11 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         togglePhysioId: (id) => dispatch({ selectedPhysioIds: { ...state.selectedPhysioIds, [id]: !state.selectedPhysioIds[id] } }),
         selectAll: () => {
             const allIds = SERIES_IDS.reduce((acc, key) => { acc[key] = true; return acc; }, {} as Record<string, boolean>);
-            dispatch({ selectedPhysioIds: allIds, advancedCharts: setAllWaveCharts(state.advancedCharts, true) });
+            dispatch({ selectedPhysioIds: allIds });
         },
         deselectAll: () => {
             const allIds = SERIES_IDS.reduce((acc, key) => { acc[key] = false; return acc; }, {} as Record<string, boolean>);
-            dispatch({ selectedPhysioIds: allIds, advancedCharts: setAllWaveCharts(state.advancedCharts, false) });
+            dispatch({ selectedPhysioIds: allIds });
         },
         toggleAdvancedChart: (chart) => dispatch({ advancedCharts: { ...state.advancedCharts, [chart]: !state.advancedCharts[chart] } }),
         applyLayout: (layout) => dispatch(layout),

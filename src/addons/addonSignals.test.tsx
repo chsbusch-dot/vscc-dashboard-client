@@ -71,6 +71,15 @@ describe('add-on signals', () => {
         expect(dashboardProbe.dataRef?.current[SYNTHETIC_SIGNAL_ID]?.y).toEqual([7]);
     });
 
+    it('marks the Basic Vitals tab when only an add-on series is selected', () => {
+        render(<DashboardProvider><AppLayout /></DashboardProvider>);
+        fireEvent.click(screen.getByRole('button', { name: 'Deselect All' }));
+        expect(screen.getByRole('button', { name: 'Basic Vitals' })).toBeTruthy();
+
+        fireEvent.click(screen.getByText('Synthetic Index'));
+        expect(screen.getByRole('button', { name: 'Basic Vitals, items selected' })).toBeTruthy();
+    });
+
     it('shows the series in the session legend and still hides unregistered ids', async () => {
         render(<DashboardProvider><SessionsDrawer open onClose={() => {}} /></DashboardProvider>);
         expect(await screen.findByText('Synthetic Index')).toBeTruthy();

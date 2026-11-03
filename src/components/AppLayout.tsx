@@ -31,6 +31,7 @@ import AnnotationsDialog from './AnnotationsDialog';
 import LayoutsDialog from './LayoutsDialog';
 import RecordingIndicator from './RecordingIndicator';
 import { getZoneLabel } from '../utils/timeFormat';
+import { anyWaveChart } from '../utils/chartSelection';
 import AddonPanels from '../addons/AddonPanels';
 
 const drawerWidth = 300;
@@ -71,7 +72,7 @@ const AppLayout = () => {
         return Object.entries(groups);
     }, [state.selectedPhysioIds]);
 
-    const anyWaveChart = state.advancedCharts.rawPleth || state.advancedCharts.ecg || state.advancedCharts.resp;
+    const wavesOn = anyWaveChart(state.advancedCharts);
 
     const getStatusText = () => {
         if (state.dataSource === 'upload' && state.recordCount > 0 && state.status !== 'Streaming' && state.status !== 'Paused') {
@@ -176,14 +177,14 @@ const AppLayout = () => {
                 ))}
 
                 {/* Only when no chart at all renders: a wave chart alone still fills the area. */}
-                {chartGroups.length === 0 && !anyWaveChart && (
+                {chartGroups.length === 0 && !wavesOn && (
                     <Box sx={{textAlign: 'center', mt: 4}}>
                         <Typography variant="h6">No data types selected.</Typography>
                         <Typography>Select data types from the sidebar to view charts.</Typography>
                     </Box>
                 )}
 
-                {anyWaveChart && (
+                {wavesOn && (
                     <AdvancedCharts
                         verticalGroup={verticalGroup}
                         showRawPleth={state.advancedCharts.rawPleth}
