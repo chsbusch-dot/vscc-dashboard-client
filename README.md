@@ -150,6 +150,7 @@ The module default-exports `DashboardAddons` (types in `src/addons/types.ts`):
 ```ts
 interface DashboardAddons {
   topics?: readonly string[];      // extra live MQTT topics, subscribed on connect
+  waveTopics?: Readonly<Record<string, readonly string[]>>;  // topic -> `signals` ids core charts from it
   panels?: readonly AddonPanel[];  // mounted under the core charts, in this order
   signals?: Readonly<Record<string, SignalMeta>>;  // extra series, keyed by physio_id
 }
@@ -177,9 +178,18 @@ merges them with `PHYSIO_META` in one lookup (`signalMeta(id)`, `SERIES_IDS`) th
 series menu, the chart grouping, the chart titles, units, tooltips and colours, and the session
 legend all read. Registered series follow the core ones in the menu, in insertion order, and
 `isCommunitySignal` accepts them, so the session legend lists them. A core id keeps its core
-metadata: an add-on cannot rename or recolour an MMS series. The series charts live only when
-its samples arrive on a topic core maps (e.g. `mp50/VitalSigns`); samples on the add-on's own
-topics still reach only its panels. Without add-ons the menu is exactly `PHYSIO_META`.
+metadata: an add-on cannot rename or recolour an MMS series. A series charts live when its
+samples arrive on a topic core maps (e.g. `mp50/VitalSigns`) or on one of the add-on's
+`waveTopics`. Without add-ons the menu is exactly `PHYSIO_META`.
+
+**Wave topics.** `waveTopics` maps an add-on topic to the `signals` ids core charts from it.
+Core subscribes those topics on connect and feeds the listed ids into the same buffer as its
+own HF waves: a message may carry one sample or an array, timestamps stay as received, and the
+buffer flushes into the live store every 100 ms while live view plays. Selected in the series
+menu, such an id charts like any registered series. Other ids on the topic, listed ids missing
+from `signals`, and every topic not listed in `waveTopics` still reach only the panels. A topic
+core maps itself keeps its core mapping. Replay needs nothing extra: it charts whatever a stored
+session returns for a registered id.
 
 Notes for add-on authors:
 

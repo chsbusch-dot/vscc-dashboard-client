@@ -41,6 +41,15 @@ export interface SignalMeta {
 export interface DashboardAddons {
     /** Extra live topics to subscribe on connect. Core drops their samples, add-ons read them. */
     topics?: readonly string[];
+    /**
+     * Live topics whose samples core charts, each mapped to the `signals` ids it takes
+     * from that topic. Core subscribes them on connect and buffers those samples like
+     * its own HF waves (a sample or an array of samples per message, flushed into the
+     * live store every 100 ms), so a selected id charts live. Other ids on the topic,
+     * ids not registered in `signals` and topics not listed here only reach the tap.
+     * A topic core maps itself keeps its core mapping.
+     */
+    waveTopics?: Readonly<Record<string, readonly string[]>>;
     /** Panels mounted in the slot under the core charts, in this order. */
     panels?: readonly AddonPanel[];
     /**
