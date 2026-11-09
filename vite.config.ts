@@ -16,8 +16,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: { 'vscc-addons': addonsEntry },
-    // A module outside this tree must share this build's React and MUI.
-    ...(external ? { dedupe: ['react', 'react-dom', '@mui/material', '@emotion/react'] } : {}),
+    // A module outside this tree must share this build's React, MUI and SciChart.
+    ...(external ? { dedupe: ['react', 'react-dom', '@mui/material', '@emotion/react', 'scichart'] } : {}),
   },
   ...(external ? { server: { fs: { allow: [searchForWorkspaceRoot(process.cwd()), dirname(addonsEntry)] } } } : {}),
 })
