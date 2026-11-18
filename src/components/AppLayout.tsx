@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
     Box,
     AppBar,
@@ -20,7 +20,7 @@ import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize';
 import { SciChartVerticalGroup } from 'scichart';
 import Sidebar from './Sidebar';
 import { useDashboard } from '../data/DashboardContext';
-import { signalMeta } from '../data/signalMeta';
+import { SERIES_IDS, signalMeta } from '../data/signalMeta';
 import ChartContainer from './ChartContainer';
 import AdvancedCharts from './AdvancedCharts';
 import SessionsDrawer from './SessionsDrawer';
@@ -33,10 +33,18 @@ import RecordingIndicator from './RecordingIndicator';
 import { getZoneLabel } from '../utils/timeFormat';
 import { anyWaveChart } from '../utils/chartSelection';
 import AddonPanels from '../addons/AddonPanels';
+import { addonPanels } from '../addons';
+import { familyOrder } from '../utils/seriesOrder';
 
 const drawerWidth = 300;
 
 const verticalGroup = new SciChartVerticalGroup();
+
+/** Add-on families, in menu order, then those only panels name (WOR-1328). */
+const FAMILIES = familyOrder([...SERIES_IDS.map(id => signalMeta(id)?.family), ...addonPanels.map(p => p.family)]);
+
+/** A chart group's family: its first series' (a group mixing families is an add-on bug). */
+const groupFamily = (physioIds: readonly string[]): string | undefined => signalMeta(physioIds[0])?.family;
 
 const AppLayout = () => {
     const { state } = useDashboard();
@@ -172,7 +180,7 @@ const AppLayout = () => {
             >
                 <Toolbar />
 
-                {chartGroups.map(([groupName, physioIds]) => (
+                {chartGroups.filter(([, physioIds]) => groupFamily(physioIds) === undefined).map(([groupName, physioIds]) => (
                     <ChartContainer key={groupName} groupName={groupName} physioIds={physioIds} verticalGroup={verticalGroup} />
                 ))}
 
@@ -192,6 +200,16 @@ const AppLayout = () => {
                         showResp={state.advancedCharts.resp}
                     />
                 )}
+
+                {/* Each add-on family as one block under the waves: its charts, then its panels. */}
+                {FAMILIES.map(family => (
+                    <Fragment key={family}>
+                        {chartGroups.filter(([, physioIds]) => groupFamily(physioIds) === family).map(([groupName, physioIds]) => (
+                            <ChartContainer key={groupName} groupName={groupName} physioIds={physioIds} verticalGroup={verticalGroup} />
+                        ))}
+                        <AddonPanels family={family} />
+                    </Fragment>
+                ))}
 
                 <AddonPanels />
             </Box>
