@@ -23,6 +23,8 @@ export interface AddonPanel {
     /** Stable key, also set as the panel wrapper's data-addon-panel attribute. */
     id: string;
     component: ComponentType<AddonPanelProps>;
+    /** Mounts right after the charts of the `signals` with this family (see SignalMeta.family). */
+    family?: string;
 }
 
 /** Display metadata of one series: the shape of a PHYSIO_META entry. */
@@ -35,6 +37,12 @@ export interface SignalMeta {
     group: string;
     /** CSS colour of the line, the checkbox and the stats box. */
     color: string;
+    /**
+     * Series and panels of one family list as one block in the menu and chart as one
+     * block under the wave charts, followed by that family's panels. Unset: the series
+     * lists and charts in its own place.
+     */
+    family?: string;
 }
 
 /** What the module behind the `vscc-addons` entry point default-exports. */
@@ -50,11 +58,12 @@ export interface DashboardAddons {
      * A topic core maps itself keeps its core mapping.
      */
     waveTopics?: Readonly<Record<string, readonly string[]>>;
-    /** Panels mounted in the slot under the core charts, in this order. */
+    /** Panels mounted under the core charts, in this order, a panel with a family after its family's charts. */
     panels?: readonly AddonPanel[];
     /**
      * Extra series keyed by physio_id, listed after the core ones in the live menu
-     * and shown in the session legend. A core id keeps its core metadata.
+     * (each family as one block) and shown in the session legend. A core id keeps its
+     * core metadata.
      */
     signals?: Readonly<Record<string, SignalMeta>>;
 }
