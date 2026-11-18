@@ -66,7 +66,7 @@ VSCC Premium is a separate, closed-source edition built on this open core throug
 
 - **Live density spectral array**: a rolling 30 minute multitaper spectrogram of one EEG channel. It updates every 5 s and shows the spectral edge frequency (SEF95) and each band's share of the power.
 - **EEG night charts**: a recorded night shown in 30 s epochs, with the spectrogram, band power shares and a hypnogram from the sleep-stage estimate in the EEG night report.
-- **Per-channel EEG series** in the standard series menu.
+- **Per-channel EEG series**: EEG1 and EEG2 waves and numeric trends (delta, theta, alpha and beta shares, SEF, peak frequency and total power). Premium adds these signals. The open-core charts draw them, and you pick them in the standard series menu.
 
 Premium also writes overnight reports: a heart report, SpO₂ with desaturations per hour, a restless-night timeline, and the EEG night report with an automated sleep-stage estimate. These are research summaries, not a sleep study or a diagnosis. VSCC Premium is for research and education use only and is not a medical device.
 
@@ -74,7 +74,15 @@ Premium also writes overnight reports: a heart report, SpO₂ with desaturations
 
 ![EEG night charts](docs/screenshots/premium-eeg-night.png)
 
-> Both screenshots show synthetic data generated for this README, not a recording.
+![EEG live feed and per-channel waves](docs/screenshots/premium-eeg-waves.png)
+
+The premium EEG feed panel sits above the EEG1 and EEG2 waves drawn by the open-core charts.
+
+![EEG numeric trends](docs/screenshots/premium-eeg-trends.png)
+
+Per-channel EEG trends over 30 minutes in the open-core charts.
+
+> All screenshots in this section show synthetic data generated for this README, not a recording.
 
 [Open an issue](https://github.com/chsbusch-dot/vscc-mqtt-server/issues/new?title=VSCC%20Premium%20interest) if you are interested in VSCC Premium. I will get back to you.
 
