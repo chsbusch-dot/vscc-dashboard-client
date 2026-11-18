@@ -9,6 +9,7 @@ import { addSessionBounds, removeSessionBounds, type SessionBoundsAnnotations } 
 import ReplayOverlay from './ReplayOverlay';
 import { SymmetricWheelZoomModifier } from '../utils/symmetricWheelZoomModifier';
 import { bandWithGapBreaks, gapLegendFor } from '../utils/seriesAgg';
+import { sciChartWasmConfig } from '../utils/sciChartWasm';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
@@ -223,7 +224,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
 
             SciChart.SciChartSurface.UseCommunityLicense();
             SciChart.SciChartDefaults.performanceWarnings = false;
-            SciChart.SciChartSurface.configure({ wasmUrl: "/scichart2d.wasm" });
+            SciChart.SciChartSurface.configure(sciChartWasmConfig);
 
             const now = Date.now() / 1000;
             // In replay, start on the session: a now-anchored axis reports a range
