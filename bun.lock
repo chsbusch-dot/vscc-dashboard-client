@@ -12,7 +12,7 @@
         "mqtt": "^5.15.0",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
-        "scichart": "^5.2.35",
+        "scichart": "^6.0.17",
       },
       "devDependencies": {
         "@eslint/js": "^9.39.1",
@@ -872,7 +872,7 @@
 
     "scheduler": ["scheduler@0.27.0", "", {}, "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q=="],
 
-    "scichart": ["scichart@5.2.35", "", {}, "sha512-lFbwOimybB1BC8a6TgrqsqnOgaBxk4R7q+IljpxA+VDPT1vZ2UwRH9+GOfWv2cbMrigZWMXB2IaMIV100bpYDg=="],
+    "scichart": ["scichart@6.0.17", "", {}, "sha512-nqZzF0RrmYvVW2Du3EB0AmlitqNDcySFWKeAr4dFHHD4tg0nYyQsdQVVwhsJ/2ASjUxfkRnCx2jXI9ly0VEzaw=="],
 
     "semver": ["semver@6.3.1", "", { "bin": "bin/semver.js" }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
