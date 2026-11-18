@@ -17,6 +17,8 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import BookmarkAddIcon from '@mui/icons-material/BookmarkAdd';
 import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
+import LightModeIcon from '@mui/icons-material/LightMode';
 import { SciChartVerticalGroup } from 'scichart';
 import Sidebar from './Sidebar';
 import { useDashboard } from '../data/DashboardContext';
@@ -31,6 +33,7 @@ import AnnotationsDialog from './AnnotationsDialog';
 import LayoutsDialog from './LayoutsDialog';
 import RecordingIndicator from './RecordingIndicator';
 import { getZoneLabel } from '../utils/timeFormat';
+import { useColorMode } from '../utils/colorMode';
 import { anyWaveChart } from '../utils/chartSelection';
 import AddonPanels from '../addons/AddonPanels';
 import { addonPanels } from '../addons';
@@ -48,6 +51,7 @@ const groupFamily = (physioIds: readonly string[]): string | undefined => signal
 
 const AppLayout = () => {
     const { state } = useDashboard();
+    const { mode: colorMode, toggle: toggleColorMode } = useColorMode();
     const [sessionsOpen, setSessionsOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [annotationsOpen, setAnnotationsOpen] = useState(false);
@@ -155,6 +159,11 @@ const AppLayout = () => {
                         >
                             Sessions
                         </Button>
+                        <Tooltip title={colorMode === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
+                            <IconButton color="inherit" aria-label="Toggle light or dark theme" aria-pressed={colorMode === 'dark'} onClick={toggleColorMode}>
+                                {colorMode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
+                            </IconButton>
+                        </Tooltip>
                         <Tooltip title="Settings">
                             <IconButton color="inherit" aria-label="Open settings" onClick={() => setSettingsOpen(true)}>
                                 <SettingsIcon />

@@ -10,6 +10,8 @@ import ReplayOverlay from './ReplayOverlay';
 import { SymmetricWheelZoomModifier } from '../utils/symmetricWheelZoomModifier';
 import { bandWithGapBreaks, gapLegendFor } from '../utils/seriesAgg';
 import { sciChartWasmConfig } from '../utils/sciChartWasm';
+import { useColorMode } from '../utils/colorMode';
+import { sciChartTheme } from '../utils/sciChartTheme';
 
 interface AdvancedChartsProps {
     verticalGroup: SciChart.SciChartVerticalGroup;
@@ -134,6 +136,11 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
     const gapStateRef = useRef<Record<string, { surface: SciChart.SciChartSurface; boxes: SciChart.BoxAnnotation[] }>>(Object.create(null));
     const observersRef = useRef<ResizeObserver[]>([]);
     const lastDataRef = useRef<{ timestamp: number; receivedAt: number } | null>(null);
+
+    // Surfaces are created in the mode current at creation and re-themed in place after.
+    const { mode: colorMode } = useColorMode();
+    const colorModeRef = useRef(colorMode);
+    useEffect(() => { colorModeRef.current = colorMode; }, [colorMode]);
 
     // Keep a stable ref for event listeners to check autoScroll status without triggering re-renders
     const autoScrollRef = useRef(state.autoScroll);
@@ -293,7 +300,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             // --- Chart 1: Time-Domain Waveform Plot (Raw PLETH Signal) ---
             if (chart1Div.current && showRawPleth) {
                 const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chart1Div.current, {
-                    theme: new SciChart.SciChartJSLightTheme()
+                    theme: sciChartTheme(colorModeRef.current)
                 });
                 if (!isMounted) {
                     sciChartSurface.delete();
@@ -342,7 +349,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             // --- Chart 1b: Time-Domain Waveform Plot (Raw ECG Signal) ---
             if (chartEcgDiv.current && showEcg) {
                 const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chartEcgDiv.current, {
-                    theme: new SciChart.SciChartJSLightTheme()
+                    theme: sciChartTheme(colorModeRef.current)
                 });
                 if (!isMounted) {
                     sciChartSurface.delete();
@@ -402,7 +409,7 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             // --- Chart 5: RESP Waveform ---
             if (chartRespDiv.current && showResp) {
                 const { sciChartSurface, wasmContext } = await SciChart.SciChartSurface.create(chartRespDiv.current, {
-                    theme: new SciChart.SciChartJSLightTheme()
+                    theme: sciChartTheme(colorModeRef.current)
                 });
                 if (!isMounted) {
                     sciChartSurface.delete();
@@ -482,6 +489,11 @@ const AdvancedCharts: React.FC<AdvancedChartsProps> = ({ verticalGroup, showRawP
             gapStateRef.current = {};
         }
     }, [showRawPleth, showEcg, showResp, verticalGroup]);
+
+    // Follow the light/dark toggle: background, axis text and gridlines change, line colours stay.
+    useEffect(() => {
+        surfacesRef.current.forEach(surface => surface.applyTheme(sciChartTheme(colorMode)));
+    }, [colorMode]);
 
     // Re-render axis labels when the Local/UTC toggle changes.
     // Formatting only: existing surfaces are invalidated, never recreated.
