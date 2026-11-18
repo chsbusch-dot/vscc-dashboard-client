@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as SciChart from 'scichart';
 import { sciChartWasmConfig } from '../utils/sciChartWasm';
+import { useColorMode } from '../utils/colorMode';
+import { sciChartTheme } from '../utils/sciChartTheme';
 
 // Initialize global settings once to avoid reconfiguration overhead
 SciChart.SciChartSurface.UseCommunityLicense();
@@ -16,6 +18,10 @@ export const useSciChart = (divElementId: string) => {
         sciChartSurface?: SciChart.SciChartSurface;
         wasmContext?: SciChart.TSciChart;
     }>({});
+    const { mode } = useColorMode();
+    // Read at creation; later changes re-theme the live surface below instead of recreating it.
+    const modeRef = useRef(mode);
+    useEffect(() => { modeRef.current = mode; }, [mode]);
 
     useEffect(() => {
         let surface: SciChart.SciChartSurface | undefined;
@@ -28,7 +34,7 @@ export const useSciChart = (divElementId: string) => {
                 if (!container) return;
 
                 const res = await SciChart.SciChartSurface.create(divElementId, {
-                    theme: new SciChart.SciChartJSLightTheme()
+                    theme: sciChartTheme(modeRef.current)
                 });
                 
                 // Handle race condition: component unmounted during async creation
@@ -64,6 +70,12 @@ export const useSciChart = (divElementId: string) => {
             setChartState({});
         };
     }, [divElementId]);
+
+    // Axes and series that keep their own colours (line strokes) keep them; the
+    // background, axis text and gridlines follow the theme.
+    useEffect(() => {
+        chartState.sciChartSurface?.applyTheme(sciChartTheme(mode));
+    }, [mode, chartState.sciChartSurface]);
 
     return chartState;
 };

@@ -43,6 +43,19 @@ export interface SignalMeta {
      * lists and charts in its own place.
      */
     family?: string;
+    /**
+     * Value-axis bounds for charts of this series. A bound that is set is fixed and a
+     * bound left out follows the data, so `{ min: 0, max: 100 }` pins a percentage and
+     * `{ min: 0 }` keeps the axis from going below zero. Unset: the axis follows the data.
+     * A chart that holds several series uses a bound only when every series sets it.
+     */
+    yRange?: YRangeHint;
+}
+
+/** See SignalMeta.yRange. */
+export interface YRangeHint {
+    min?: number;
+    max?: number;
 }
 
 /** What the module behind the `vscc-addons` entry point default-exports. */

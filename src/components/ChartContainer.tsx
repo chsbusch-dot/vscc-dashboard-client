@@ -4,6 +4,8 @@ import { signalMeta } from '../data/signalMeta';
 import { getClinicalColor } from '../utils/colors';
 import { useDashboard } from '../data/DashboardContext';
 import { useSciChart } from '../hooks/useSciChart';
+import { HintedNumericAxis } from '../utils/hintedNumericAxis';
+import { combineYRangeHints } from '../utils/yRangeHint';
 import { formatChartTime } from '../utils/timeFormat';
 import { applyTimeDisplayToLabelProvider, refreshSurfaceTimeLabels } from '../utils/chartTimeAxis';
 import { addSessionBounds, removeSessionBounds } from '../utils/sessionBounds';
@@ -175,7 +177,9 @@ const ChartContainer: React.FC<ChartContainerProps> = ({
             growBy: new SciChart.NumberRange(0.2, 0.2),
         };
 
-        surface.yAxes.add(new SciChart.NumericAxis(wasmContext, yAxisOptions));
+        // An add-on series may pin its axis (SignalMeta.yRange); without a hint this autoranges as before.
+        const yHint = combineYRangeHints(physioIds.map(id => signalMeta(id)?.yRange));
+        surface.yAxes.add(new HintedNumericAxis(wasmContext, yAxisOptions, yHint));
 
         // Create Series
         physioIds.forEach(id => {
