@@ -60,6 +60,24 @@ the latest VSCapture automatically; no separate setup is needed.
 > The screenshots above show SpO₂ and pulse trends, a raw plethysmograph pulse waveform, and a
 > respiration trace from recorded MP50 data.
 
+### VSCC Premium: EEG panels
+
+VSCC Premium is a separate, closed-source edition built on this open core through the [add-on panel](#add-on-panels) slots. The open core stays MIT licensed and complete on its own. Premium now includes EEG features:
+
+- **Live density spectral array**: a rolling 30 minute multitaper spectrogram of one EEG channel. It updates every 5 s and shows the spectral edge frequency (SEF95) and each band's share of the power.
+- **EEG night charts**: a recorded night shown in 30 s epochs, with the spectrogram, band power shares and a hypnogram from the sleep-stage estimate in the EEG night report.
+- **Per-channel EEG series** in the standard series menu.
+
+Premium also writes overnight reports: a heart report, SpO₂ with desaturations per hour, a restless-night timeline, and the EEG night report with an automated sleep-stage estimate. These are research summaries, not a sleep study or a diagnosis. VSCC Premium is for research and education use only and is not a medical device.
+
+![EEG density spectral array](docs/screenshots/premium-eeg-dsa.png)
+
+![EEG night charts](docs/screenshots/premium-eeg-night.png)
+
+> Both screenshots show synthetic data generated for this README, not a recording.
+
+[Open an issue](https://github.com/chsbusch-dot/vscc-mqtt-server/issues/new?title=VSCC%20Premium%20interest) if you are interested in VSCC Premium. I will get back to you.
+
 ---
 
 ## Getting started
