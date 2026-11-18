@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import * as SciChart from 'scichart';
+import { sciChartWasmConfig } from '../utils/sciChartWasm';
 
 // Initialize global settings once to avoid reconfiguration overhead
 SciChart.SciChartSurface.UseCommunityLicense();
 SciChart.SciChartDefaults.performanceWarnings = false;
-SciChart.SciChartSurface.configure({ wasmUrl: "/scichart2d.wasm" });
+SciChart.SciChartSurface.configure(sciChartWasmConfig);
 
 /**
  * Custom hook to initialize a SciChartSurface with robust lifecycle management.
